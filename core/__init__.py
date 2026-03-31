@@ -1,6 +1,4 @@
-"""
-核心模块
-"""
+""" 核心模块 """
 
 from .scheduler import AwarenessScheduler
 from .reflection import ReflectionGenerator
@@ -9,6 +7,7 @@ from .dependency import DependencyManager
 from .message_cache import MessageCache
 from .silent_hours import SilentHoursChecker
 from .webui import DayMindWebUI
+from .mood import MoodManager
 
 __all__ = [
     "AwarenessScheduler",
@@ -18,4 +17,5 @@ __all__ = [
     "MessageCache",
     "SilentHoursChecker",
     "DayMindWebUI",
+    "MoodManager",
 ]

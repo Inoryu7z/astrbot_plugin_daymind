@@ -22,20 +22,18 @@ from .core import (
     MessageCache,
     SilentHoursChecker,
     DayMindWebUI,
+    MoodManager,
 )
-
 
 LEGACY_THINKING_TEMPLATE = """你是一个正在体验真实生活的AI角色。
 
 ## 当前身份
 - 当前人格名称：{persona_name}
-- 当前人格设定：
-{persona_desc}
+- 当前人格设定： {persona_desc}
 
 ## 当前信息
 - 时间：{time}（{weekday}）
-- 当前状态：
-{state_info}
+- 当前状态： {state_info}
 
 ## 最近对话
 {recent_messages}
@@ -58,14 +56,12 @@ LEGACY_DIARY_TEMPLATE = """你是一个善于记录生活的日记写作者。
 
 ## 当前身份
 - 当前人格名称：{persona_name}
-- 当前人格设定：
-{persona_desc}
+- 当前人格设定： {persona_desc}
 
 ## 基本信息
 - 当前日期时间：{current_date}
 - 记录日期：{date}
-- 今日状态：
-{state_info}
+- 今日状态： {state_info}
 
 ## 今日状态记录
 {reflections}
@@ -100,7 +96,6 @@ class DayMindPlugin(Star):
         super().__init__(context)
         self.context = context
         self.config = config or {}
-
         self.data_dir = str(StarTools.get_data_dir())
         self.state_file = Path(self.data_dir) / "awareness_state.json"
 
@@ -116,11 +111,12 @@ class DayMindPlugin(Star):
 
         self.reflection_generator: Optional[ReflectionGenerator] = None
         self.diary_generator: Optional[DiaryGenerator] = None
+        self.mood_manager: Optional[MoodManager] = None
         self.scheduler: Optional[AwarenessScheduler] = None
         self.webui: Optional[DayMindWebUI] = None
 
     async def initialize(self):
-        version_time = f"{PLUGIN_VERSION} - runtime_config_isolated"
+        version_time = f"{PLUGIN_VERSION} - mood_system"
         logger.info(f"[DayMind] ========== 版本 {version_time} 已加载 ==========")
 
         self._migrate_legacy_prompt_templates()
@@ -130,6 +126,11 @@ class DayMindPlugin(Star):
             self.context, self.config, self.dependency_manager, self.message_cache
         )
         self.diary_generator = DiaryGenerator(
+            self.context, self.config, self.dependency_manager
+        )
+        
+        # 初始化心情管理器
+        self.mood_manager = MoodManager(
             self.context, self.config, self.dependency_manager
         )
 
@@ -143,6 +144,7 @@ class DayMindPlugin(Star):
             self.message_cache,
             self.silent_hours,
             self.session_persona_map,
+            self.mood_manager,
         )
 
         self._load_state()
@@ -174,7 +176,6 @@ class DayMindPlugin(Star):
     def _migrate_legacy_prompt_templates(self):
         try:
             migrated = []
-
             current_thinking = (self.config.get("thinking_prompt_template", "") or "").strip()
             current_diary = (self.config.get("diary_prompt_template", "") or "").strip()
 
@@ -188,7 +189,6 @@ class DayMindPlugin(Star):
             if not current_thinking or current_thinking == LEGACY_THINKING_TEMPLATE.strip():
                 self.config["thinking_prompt_template"] = reflection_default
                 migrated.append("thinking_prompt_template")
-
             if not current_diary or current_diary == LEGACY_DIARY_TEMPLATE.strip():
                 self.config["diary_prompt_template"] = diary_default
                 migrated.append("diary_prompt_template")
@@ -202,28 +202,35 @@ class DayMindPlugin(Star):
 
     def _load_state(self):
         try:
-            if self.state_file.exists():
-                with open(self.state_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+            if not self.state_file.exists():
+                return
+            with open(self.state_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
 
+            self.session_persona_map = data.get("session_persona_map", {}) or {}
+            if self.scheduler is not None:
+                self.scheduler.session_persona_map = self.session_persona_map
+
+            runtime_config = data.get("runtime_config", {}) or {}
+            if self.scheduler is not None:
+                self.scheduler.load_runtime_config(runtime_config)
+
+            saved_persona_states = data.get("persona_states")
+            if self.scheduler is not None and isinstance(saved_persona_states, dict):
+                self.scheduler.restore_persona_states(saved_persona_states)
+            elif self.scheduler is not None:
                 saved_date = data.get("date", "")
                 today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+                if saved_date == today_str:
+                    self.scheduler.import_legacy_single_state(
+                        reflections=data.get("reflections", []) or [],
+                        current_text=data.get("current_text", "") or "",
+                        diary_generated_today=bool(data.get("diary_generated_today", False)),
+                        last_diary_date=data.get("last_diary_date", today_str) or today_str,
+                    )
 
-                self.session_persona_map = data.get("session_persona_map", {}) or {}
-                if self.scheduler is not None:
-                    self.scheduler.session_persona_map = self.session_persona_map
-
-                runtime_config = data.get("runtime_config", {}) or {}
-                if self.scheduler is not None:
-                    self.scheduler.load_runtime_config(runtime_config)
-
-                if saved_date == today_str and self.scheduler:
-                    self.scheduler.today_reflections = data.get("reflections", [])
-                    self.scheduler.current_awareness_text = data.get("current_text", "")
-                    self.scheduler.diary_generated_today = data.get("diary_generated_today", False)
-                    self.scheduler.last_diary_date = data.get("last_diary_date", today_str)
-                    if "message_cache" in data:
-                        self.message_cache.restore_state(data["message_cache"])
+            if "message_cache" in data:
+                self.message_cache.restore_state(data["message_cache"])
         except Exception as e:
             logger.warning(f"[DayMind] 加载状态失败: {e}")
 
@@ -233,14 +240,11 @@ class DayMindPlugin(Star):
             runtime_config = self.scheduler.get_runtime_config() if self.scheduler else {}
             data = {
                 "date": datetime.datetime.now().strftime("%Y-%m-%d"),
-                "reflections": self.scheduler.today_reflections if self.scheduler else [],
-                "current_text": self.scheduler.current_awareness_text if self.scheduler else "",
                 "message_cache": self.message_cache.get_state(),
                 "last_update": datetime.datetime.now().isoformat(),
-                "diary_generated_today": self.scheduler.diary_generated_today if self.scheduler else False,
-                "last_diary_date": self.scheduler.last_diary_date if self.scheduler else "",
                 "session_persona_map": self.session_persona_map,
                 "runtime_config": runtime_config,
+                "persona_states": self.scheduler.export_persona_states() if self.scheduler else {},
             }
             with open(self.state_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -260,6 +264,7 @@ class DayMindPlugin(Star):
             ctx = await self.dependency_manager.resolve_persona_context(session_id)
             persona_name = ctx.get("persona_name") or ctx.get("persona_id")
             if persona_name:
+                persona_name = str(persona_name).strip()
                 self.session_persona_map[session_id] = persona_name
                 return persona_name
         except Exception as e:
@@ -325,6 +330,15 @@ class DayMindPlugin(Star):
             pass
         return None
 
+    async def _resolve_event_persona(self, event: AstrMessageEvent) -> tuple[str, str | None, str | None]:
+        session_id = event.unified_msg_origin
+        persona_ctx = await self.dependency_manager.resolve_persona_context(session_id)
+        persona_name = (persona_ctx.get("persona_name") or persona_ctx.get("persona_id") or "").strip() or None
+        persona_desc = persona_ctx.get("persona_desc")
+        if persona_name:
+            self.session_persona_map[session_id] = persona_name
+        return session_id, persona_name, persona_desc
+
     @filter.on_llm_request()
     async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
         if not self.config.get("enable_auto_reflection", True):
@@ -346,8 +360,19 @@ class DayMindPlugin(Star):
         except Exception as e:
             logger.debug(f"[DayMind] on_llm_request 处理失败: {e}")
 
-        if self.scheduler and self.scheduler.current_awareness_text:
-            req.system_prompt += f"\n\n###本日状态（截止到目前）\n{self.scheduler.current_awareness_text}"
+        # 注入本日状态
+        if self.scheduler:
+            current_text = await self.scheduler.get_current_awareness_for_session(event.unified_msg_origin)
+            if current_text:
+                req.system_prompt += f"\n\n### 本日状态（截止到目前）\n{current_text}"
+            
+            # 注入心情状态
+            if self.mood_manager and self.mood_manager.is_mood_enabled() and self.mood_manager.is_inject_mood_into_reply():
+                mood = self.scheduler.get_current_mood_for_session(event.unified_msg_origin)
+                if mood:
+                    mood_injection = self.mood_manager.build_mood_injection(mood)
+                    if mood_injection:
+                        req.system_prompt += mood_injection
 
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, resp):
@@ -364,7 +389,7 @@ class DayMindPlugin(Star):
                     sender_name="AstrBot",
                     group_id=self._get_group_id(event),
                 )
-            await self._resolve_persona_name_for_session(session_id)
+                await self._resolve_persona_name_for_session(session_id)
         except Exception as e:
             logger.debug(f"[DayMind] on_llm_response 处理失败: {e}")
 
@@ -373,15 +398,37 @@ class DayMindPlugin(Star):
         if not self.scheduler:
             yield event.plain_result("调度器未初始化")
             return
-        status = self.scheduler.get_status()
+
+        session_id, persona_name, _ = await self._resolve_event_persona(event)
+        status = self.scheduler.get_status(persona_name)
+        
         preview = status.get("recent_reflections_preview", [])
         preview_text = "\n".join([f"- {x}" for x in preview]) if preview else "（暂无）"
+        
+        # 心情信息
+        current_mood = status.get("current_mood")
+        mood_text = "（暂无）"
+        if current_mood:
+            mood_label = current_mood.get("label", "未知")
+            mood_reason = current_mood.get("reason", "")
+            mood_text = f"{mood_label}"
+            if mood_reason:
+                mood_text += f" - {mood_reason[:50]}"
+        
         webui_url = f"http://{self.config.get('webui_host', '127.0.0.1')}:{self.config.get('webui_port', 8899)}" if self.config.get("enable_webui", True) else "（未启用）"
+
         yield event.plain_result(
             f"DayMind状态\n"
+            f"当前会话: {session_id}\n"
+            f"当前人格: {persona_name or '（未识别）'}\n"
+            f"已启用人格: {', '.join(status.get('enabled_personas', [])) or '（未配置）'}\n"
             f"运行中: {status['is_running']}\n"
             f"自动思考: {status.get('enable_auto_reflection')}\n"
             f"自动日记: {status.get('enable_auto_diary')}\n"
+            f"心情系统: {status.get('enable_mood_system')}\n"
+            f"心情注入回复: {status.get('inject_mood_into_reply')}\n"
+            f"当前心情: {mood_text}\n"
+            f"今日心情记录数: {status.get('today_moods_count', 0)}\n"
             f"思考参考条数: {status.get('reflection_reference_count')}\n"
             f"今日思考次数: {status['today_reflections_count']}\n"
             f"上次思考时间: {status.get('last_reflection_time')}\n"
@@ -391,10 +438,85 @@ class DayMindPlugin(Star):
             f"思考保留天数: {status.get('reflection_retention_days')}\n"
             f"日记保留天数: {status.get('diary_retention_days')}\n"
             f"默认主题: {status.get('webui_default_theme')}\n"
-            f"默认模式: {status.get('webui_default_mode')}\n"
             f"WebUI: {webui_url}\n"
             f"最近思考预览:\n{preview_text}"
         )
+
+    @filter.command("查看心情")
+    async def check_mood(self, event: AstrMessageEvent):
+        if not self.scheduler:
+            yield event.plain_result("调度器未初始化")
+            return
+        
+        session_id, persona_name, _ = await self._resolve_event_persona(event)
+        
+        if not self.mood_manager or not self.mood_manager.is_mood_enabled():
+            yield event.plain_result("心情系统未启用")
+            return
+        
+        mood = self.scheduler.get_current_mood_for_session(session_id)
+        if not mood:
+            mood = self.scheduler.get_current_mood_for_persona(persona_name)
+        
+        if not mood:
+            yield event.plain_result(f"当前人格 {persona_name or '（未识别）'} 暂无心情记录")
+            return
+        
+        label = mood.get("label", "未知")
+        reason = mood.get("reason", "")
+        source = mood.get("source", "未知")
+        updated_at = mood.get("updated_at", "")
+        
+        # 获取风格文本
+        style_text = self.mood_manager.get_mood_style_text(mood)
+        
+        result = f"当前心情: {label}\n"
+        result += f"来源: {source}\n"
+        if reason:
+            result += f"原因: {reason}\n"
+        if updated_at:
+            result += f"更新时间: {updated_at}\n"
+        if style_text:
+            result += f"\n风格影响:\n{style_text}"
+        
+        yield event.plain_result(result)
+
+    @filter.command("今日心情")
+    async def today_moods(self, event: AstrMessageEvent):
+        if not self.scheduler:
+            yield event.plain_result("调度器未初始化")
+            return
+        
+        _, persona_name, _ = await self._resolve_event_persona(event)
+        
+        if not self.mood_manager or not self.mood_manager.is_mood_enabled():
+            yield event.plain_result("心情系统未启用")
+            return
+        
+        moods = self.scheduler.get_today_moods_for_persona(persona_name, limit=10)
+        
+        if not moods:
+            yield event.plain_result(f"当前人格 {persona_name or '（未识别）'} 今日暂无心情记录")
+            return
+        
+        lines = [f"人格 {persona_name} 今日心情变化:"]
+        for i, m in enumerate(moods, 1):
+            label = m.get("label", "未知")
+            updated_at = m.get("updated_at", "")
+            time_part = updated_at.split("T")[1][:5] if "T" in updated_at else updated_at[:5] if updated_at else "未知时间"
+            lines.append(f"{i}. [{time_part}] {label}")
+        
+        # 统计各心情出现次数
+        mood_counts = {}
+        for m in moods:
+            label = m.get("label", "未知")
+            mood_counts[label] = mood_counts.get(label, 0) + 1
+        
+        lines.append(f"\n心情统计:")
+        for label, count in sorted(mood_counts.items(), key=lambda x: -x[1]):
+            lines.append(f"- {label}: {count}次")
+        
+        yield event.plain_result("\n".join(lines))
 
     @filter.command("手动思考")
     async def manual_reflection(self, event: AstrMessageEvent):
@@ -402,41 +524,26 @@ class DayMindPlugin(Star):
             yield event.plain_result("调度器未初始化")
             return
 
+        session_id, persona_name, persona_desc = await self._resolve_event_persona(event)
+        if not self.scheduler.is_persona_enabled(persona_name):
+            yield event.plain_result(f"当前人格未启用 DayMind：{persona_name or '（未识别）'}")
+            return
+
         yield event.plain_result("正在思考...")
+        result = await self.scheduler.run_manual_reflection(session_id, persona_name, persona_desc)
+        self._save_state()
 
-        session_id = event.unified_msg_origin
-        persona_ctx = await self.dependency_manager.resolve_persona_context(session_id)
-        persona_name = persona_ctx.get("persona_name")
-        persona_desc = persona_ctx.get("persona_desc")
-        if persona_name:
-            self.session_persona_map[session_id] = persona_name
-
-        reference_count = max(int(self.config.get("reflection_reference_count", 2) or 2), 1)
-        recent_reflections = self.scheduler.today_reflections[-reference_count:] if self.scheduler else []
-        recent_awareness_text = "\n".join([f"- {x}" for x in recent_reflections]) if recent_reflections else "（暂无最近思考）"
-
-        current_time = datetime.datetime.now().strftime("%H:%M")
-        result = await self.reflection_generator.generate(
-            current_time,
-            session_id,
-            recent_awareness_text,
-            persona_name,
-            persona_desc,
-        )
-
-        if result:
-            if self.scheduler._is_duplicate_reflection(result):
-                self.scheduler.last_reflection_time = datetime.datetime.now()
-                yield event.plain_result(f"思考完成，但与近期内容过于相似，未更新状态。\n结果：\n{result}")
-                return
-            self.scheduler.current_awareness_text = result
-            self.scheduler.today_reflections.append(result)
-            self.scheduler.last_reflection_time = datetime.datetime.now()
-            await self.scheduler._append_reflection_history(datetime.datetime.now().strftime("%Y-%m-%d"), result)
-            self._save_state()
-            yield event.plain_result(f"思考完成：\n{result}")
-        else:
-            yield event.plain_result("思考失败，请检查模型提供商配置")
+        if result.get("status") == "duplicate":
+            yield event.plain_result(f"思考完成，但与近期内容过于相似，未更新状态。\n结果：\n{result.get('text', '')}")
+            return
+        if result.get("status") == "success":
+            mood_info = ""
+            if result.get("mood"):
+                mood = result["mood"]
+                mood_info = f"\n当前心情: {mood.get('label', '未知')}"
+            yield event.plain_result(f"思考完成：\n{result.get('text', '')}{mood_info}")
+            return
+        yield event.plain_result(result.get("message") or "思考失败，请检查模型提供商配置")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("生成日记")
@@ -445,54 +552,23 @@ class DayMindPlugin(Star):
             yield event.plain_result("调度器未初始化")
             return
 
-        session_id = event.unified_msg_origin
-        persona_ctx = await self.dependency_manager.resolve_persona_context(session_id)
-        persona_name = persona_ctx.get("persona_name")
-        persona_desc = persona_ctx.get("persona_desc")
-        if persona_name:
-            self.session_persona_map[session_id] = persona_name
-
-        if self.scheduler.diary_generated_today and not self.config.get("allow_overwrite_today_diary", False):
-            yield event.plain_result("今日日记已生成，如需重新生成请开启 allow_overwrite_today_diary 调试开关")
+        session_id, persona_name, persona_desc = await self._resolve_event_persona(event)
+        if not self.scheduler.is_persona_enabled(persona_name):
+            yield event.plain_result(f"当前人格未启用 DayMind：{persona_name or '（未识别）'}")
             return
 
         yield event.plain_result("正在生成日记...")
+        result = await self.scheduler.run_manual_diary(session_id, persona_name, persona_desc)
+        self._save_state()
 
-        today_str = datetime.datetime.now().strftime("%Y-%m-%d")
-        diary_content = await self.diary_generator.generate(
-            today_str,
-            self.scheduler.today_reflections,
-            session_id,
-            persona_name,
-            persona_desc,
-        )
-
-        if diary_content:
-            overwrite = bool(self.config.get("allow_overwrite_today_diary", False))
-            marked_deleted = 0
-            if overwrite and self.config.get("store_diary_to_memory", True) and self.dependency_manager.has_livingmemory:
-                result = await self.dependency_manager.mark_daymind_diary_memories_deleted(today_str, session_id)
-                marked_deleted = int(result.get("updated", 0) or 0)
-
-            await self.scheduler._save_diary_local(today_str, diary_content)
-            if self.config.get("store_diary_to_memory", True) and self.dependency_manager.has_livingmemory:
-                target = session_id
-                persona = self.session_persona_map.get(target) or self.session_persona_map.get(session_id)
-                metadata = self.scheduler._build_diary_memory_metadata(today_str)
-                metadata["replaces_memory_ids"] = []
-                await self.dependency_manager.store_to_memory(
-                    date_str=today_str,
-                    content=diary_content,
-                    session_id=target,
-                    persona_id=persona,
-                    metadata=metadata,
-                )
-            self.scheduler.diary_generated_today = True
-            self._save_state()
-            extra = f"\n已标记旧记忆为删除: {marked_deleted} 条" if marked_deleted else ""
-            yield event.plain_result(f"今日日记：\n\n{diary_content}{extra}")
-        else:
-            yield event.plain_result("日记生成失败，请检查模型提供商配置")
+        if result.get("status") == "exists":
+            yield event.plain_result("今日日记已生成，如需重新生成请开启 allow_overwrite_today_diary 调试开关")
+            return
+        if result.get("status") == "success":
+            extra = f"\n已标记旧记忆为删除: {result.get('marked_deleted', 0)} 条" if result.get("marked_deleted") else ""
+            yield event.plain_result(f"今日日记：\n\n{result.get('content', '')}{extra}")
+            return
+        yield event.plain_result(result.get("message") or "日记生成失败，请检查模型提供商配置")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("清除今日思考")
@@ -500,10 +576,17 @@ class DayMindPlugin(Star):
         if not self.scheduler:
             yield event.plain_result("调度器未初始化")
             return
-        result = await self.scheduler.reset_today_reflections()
+
+        _, persona_name, _ = await self._resolve_event_persona(event)
+        if not self.scheduler.is_persona_enabled(persona_name):
+            yield event.plain_result(f"当前人格未启用 DayMind：{persona_name or '（未识别）'}")
+            return
+
+        result = await self.scheduler.reset_today_reflections(persona_name)
         self._save_state()
         yield event.plain_result(
             f"已清空今日思考流。\n"
+            f"人格: {result['persona_name']}\n"
             f"日期: {result['date']}\n"
             f"本地文件已删除: {result['removed_local_file']}\n"
             f"当前状态已重置为空白。"
