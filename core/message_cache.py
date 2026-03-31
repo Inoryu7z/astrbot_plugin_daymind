@@ -115,21 +115,21 @@ class MessageCache:
         async with self._lock:
             return list(self._cache.keys())
 
-    async def get_most_recent_session_id(self) -> str | None:
-        """获取最近活跃的会话ID"""
+    async def get_recent_session_ids(self) -> list[str]:
+        """按最近活跃时间倒序返回会话 ID"""
         async with self._lock:
-            latest_session_id = None
-            latest_timestamp = -1.0
-
+            pairs: list[tuple[str, float]] = []
             for session_id, messages in self._cache.items():
                 if not messages:
                     continue
-                last_msg = messages[-1]
-                if last_msg.timestamp > latest_timestamp:
-                    latest_timestamp = last_msg.timestamp
-                    latest_session_id = session_id
+                pairs.append((session_id, messages[-1].timestamp))
+            pairs.sort(key=lambda x: x[1], reverse=True)
+            return [session_id for session_id, _ in pairs]
 
-            return latest_session_id
+    async def get_most_recent_session_id(self) -> str | None:
+        """获取最近活跃的会话ID"""
+        session_ids = await self.get_recent_session_ids()
+        return session_ids[0] if session_ids else None
 
     def _resolve_display_name(self, sender_id: str | None, sender_name: str | None) -> str:
         if sender_name:

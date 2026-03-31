@@ -46,6 +46,7 @@ class DiaryGenerator:
         session_id: str | None = None,
         persona_name: str | None = None,
         persona_desc: str | None = None,
+        **kwargs,
     ) -> Optional[str]:
         """生成日记（即使没有思考记录也能基于日程生成）"""
         try:
@@ -57,7 +58,7 @@ class DiaryGenerator:
                 resolved_name = resolved_name or persona_ctx.get("persona_name")
                 resolved_desc = resolved_desc or persona_ctx.get("persona_desc")
 
-            recent_diaries = self._load_recent_diaries(date_str)
+            recent_diaries = self._load_recent_diaries(date_str, resolved_name)
             prompt = self._build_prompt(
                 date_str,
                 schedule_data,
@@ -127,7 +128,7 @@ class DiaryGenerator:
         if self.config.get("debug_mode", False):
             history_count = 0 if recent_diaries_text == "无历史日记参考" else recent_diaries_text.count("\n\n") + 1
             logger.info(
-                f"[DiaryGenerator] 历史日记参考: count={history_count}, length={len(recent_diaries_text)}, date={date_str}"
+                f"[DiaryGenerator] 历史日记参考: count={history_count}, length={len(recent_diaries_text)}, date={date_str}, persona={persona_name_text}"
             )
 
         try:
@@ -218,12 +219,16 @@ class DiaryGenerator:
 - 若【今日现实轨迹】为空，以日常的生活节奏为基础，记录今日的闲散状态与内心感悟，不得编造离谱的特殊经历。
 """
 
-    def _load_recent_diaries(self, date_str: str) -> str:
+    def _sanitize_persona_path(self, persona_name: str | None) -> str:
+        name = str(persona_name or "").strip() or "未命名人格"
+        return re.sub(r'[\\/:*?"<>|]+', '_', name).strip() or '未命名人格'
+
+    def _load_recent_diaries(self, date_str: str, persona_name: str | None = None) -> str:
         reference_count = self._safe_reference_count(self.config.get("diary_reference_count", 2), default=2)
         if reference_count == 0:
             return "无历史日记参考"
 
-        diaries_dir = self.data_dir / "diaries"
+        diaries_dir = self.data_dir / "diaries" / self._sanitize_persona_path(persona_name)
         if not diaries_dir.exists() or not diaries_dir.is_dir():
             return "无历史日记参考"
 
