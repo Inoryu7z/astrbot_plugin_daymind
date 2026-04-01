@@ -128,7 +128,7 @@ class DayMindPlugin(Star):
         self.diary_generator = DiaryGenerator(
             self.context, self.config, self.dependency_manager
         )
-        
+
         # 初始化心情管理器
         self.mood_manager = MoodManager(
             self.context, self.config, self.dependency_manager
@@ -172,6 +172,9 @@ class DayMindPlugin(Star):
         if self.scheduler:
             await self.scheduler.stop()
         self._save_state()
+
+    def _is_debug_mode(self) -> bool:
+        return bool(self.config.get("debug_mode", False))
 
     def _migrate_legacy_prompt_templates(self):
         try:
@@ -365,7 +368,7 @@ class DayMindPlugin(Star):
             current_text = await self.scheduler.get_current_awareness_for_session(event.unified_msg_origin)
             if current_text:
                 req.system_prompt += f"\n\n### 本日状态（截止到目前）\n{current_text}"
-            
+
             # 注入心情状态
             if self.mood_manager and self.mood_manager.is_mood_enabled() and self.mood_manager.is_inject_mood_into_reply():
                 mood = self.scheduler.get_current_mood_for_session(event.unified_msg_origin)
@@ -373,6 +376,10 @@ class DayMindPlugin(Star):
                     mood_injection = self.mood_manager.build_mood_injection(mood)
                     if mood_injection:
                         req.system_prompt += mood_injection
+                        if self._is_debug_mode():
+                            logger.info(
+                                f"[DayMind][debug] 注入心情到回复: session={event.unified_msg_origin}, current={mood.get('label', '未知')}, previous={(mood.get('previous_mood') or {}).get('label', '无')}"
+                            )
 
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, resp):
@@ -401,12 +408,13 @@ class DayMindPlugin(Star):
 
         session_id, persona_name, _ = await self._resolve_event_persona(event)
         status = self.scheduler.get_status(persona_name)
-        
+
         preview = status.get("recent_reflections_preview", [])
         preview_text = "\n".join([f"- {x}" for x in preview]) if preview else "（暂无）"
-        
+
         # 心情信息
         current_mood = status.get("current_mood")
+        previous_mood = status.get("previous_mood")
         mood_text = "（暂无）"
         if current_mood:
             mood_label = current_mood.get("label", "未知")
@@ -414,7 +422,10 @@ class DayMindPlugin(Star):
             mood_text = f"{mood_label}"
             if mood_reason:
                 mood_text += f" - {mood_reason[:50]}"
-        
+        previous_mood_text = "（暂无）"
+        if previous_mood:
+            previous_mood_text = previous_mood.get("label", "未知")
+
         webui_url = f"http://{self.config.get('webui_host', '127.0.0.1')}:{self.config.get('webui_port', 8899)}" if self.config.get("enable_webui", True) else "（未启用）"
 
         yield event.plain_result(
@@ -428,6 +439,7 @@ class DayMindPlugin(Star):
             f"心情系统: {status.get('enable_mood_system')}\n"
             f"心情注入回复: {status.get('inject_mood_into_reply')}\n"
             f"当前心情: {mood_text}\n"
+            f"上一轮心情: {previous_mood_text}\n"
             f"今日心情记录数: {status.get('today_moods_count', 0)}\n"
             f"思考参考条数: {status.get('reflection_reference_count')}\n"
             f"今日思考次数: {status['today_reflections_count']}\n"
@@ -447,38 +459,41 @@ class DayMindPlugin(Star):
         if not self.scheduler:
             yield event.plain_result("调度器未初始化")
             return
-        
+
         session_id, persona_name, _ = await self._resolve_event_persona(event)
-        
+
         if not self.mood_manager or not self.mood_manager.is_mood_enabled():
             yield event.plain_result("心情系统未启用")
             return
-        
+
         mood = self.scheduler.get_current_mood_for_session(session_id)
         if not mood:
             mood = self.scheduler.get_current_mood_for_persona(persona_name)
-        
+
         if not mood:
             yield event.plain_result(f"当前人格 {persona_name or '（未识别）'} 暂无心情记录")
             return
-        
+
         label = mood.get("label", "未知")
         reason = mood.get("reason", "")
         source = mood.get("source", "未知")
         updated_at = mood.get("updated_at", "")
-        
+        previous_mood = mood.get("previous_mood") or self.scheduler.get_previous_mood_for_persona(persona_name)
+
         # 获取风格文本
         style_text = self.mood_manager.get_mood_style_text(mood)
-        
+
         result = f"当前心情: {label}\n"
         result += f"来源: {source}\n"
+        if previous_mood:
+            result += f"上一轮心情: {previous_mood.get('label', '未知')}\n"
         if reason:
             result += f"原因: {reason}\n"
         if updated_at:
             result += f"更新时间: {updated_at}\n"
         if style_text:
             result += f"\n风格影响:\n{style_text}"
-        
+
         yield event.plain_result(result)
 
     @filter.command("今日心情")
@@ -486,36 +501,38 @@ class DayMindPlugin(Star):
         if not self.scheduler:
             yield event.plain_result("调度器未初始化")
             return
-        
+
         _, persona_name, _ = await self._resolve_event_persona(event)
-        
+
         if not self.mood_manager or not self.mood_manager.is_mood_enabled():
             yield event.plain_result("心情系统未启用")
             return
-        
+
         moods = self.scheduler.get_today_moods_for_persona(persona_name, limit=10)
-        
+
         if not moods:
             yield event.plain_result(f"当前人格 {persona_name or '（未识别）'} 今日暂无心情记录")
             return
-        
+
         lines = [f"人格 {persona_name} 今日心情变化:"]
         for i, m in enumerate(moods, 1):
             label = m.get("label", "未知")
+            prev_label = (m.get("previous_mood") or {}).get("label", "")
             updated_at = m.get("updated_at", "")
             time_part = updated_at.split("T")[1][:5] if "T" in updated_at else updated_at[:5] if updated_at else "未知时间"
-            lines.append(f"{i}. [{time_part}] {label}")
-        
+            suffix = f"（承接 {prev_label}）" if prev_label and prev_label != label else ""
+            lines.append(f"{i}. [{time_part}] {label}{suffix}")
+
         # 统计各心情出现次数
         mood_counts = {}
         for m in moods:
             label = m.get("label", "未知")
             mood_counts[label] = mood_counts.get(label, 0) + 1
-        
+
         lines.append(f"\n心情统计:")
         for label, count in sorted(mood_counts.items(), key=lambda x: -x[1]):
             lines.append(f"- {label}: {count}次")
-        
+
         yield event.plain_result("\n".join(lines))
 
     @filter.command("手动思考")
@@ -540,7 +557,10 @@ class DayMindPlugin(Star):
             mood_info = ""
             if result.get("mood"):
                 mood = result["mood"]
+                prev_label = (mood.get("previous_mood") or {}).get("label", "")
                 mood_info = f"\n当前心情: {mood.get('label', '未知')}"
+                if prev_label and prev_label != mood.get("label"):
+                    mood_info += f"\n上一轮心情: {prev_label}"
             yield event.plain_result(f"思考完成：\n{result.get('text', '')}{mood_info}")
             return
         yield event.plain_result(result.get("message") or "思考失败，请检查模型提供商配置")
