@@ -11,6 +11,11 @@ from astrbot.api import logger
 class DependencyManager:
     """依赖管理器"""
 
+    DAYFLOW_PLUGIN_NAMES = {
+        "astrbot_plugin_life_scheduler",
+        "astrbot_plugin_dayflow_life_scheduler",
+    }
+
     def __init__(self, context):
         self.context = context
         self._has_life_scheduler: Optional[bool] = None
@@ -18,29 +23,37 @@ class DependencyManager:
         self._life_scheduler_instance = None
         self._livingmemory_instance = None
 
+    def _extract_star_instance(self, star_metadata):
+        for attr in ("star", "instance", "plugin", "obj", "star_cls"):
+            value = getattr(star_metadata, attr, None)
+            if value is not None:
+                return value
+        return None
+
     def check_dependencies(self) -> dict:
         """检查依赖插件状态"""
         result = {"life_scheduler": False, "livingmemory": False}
 
         try:
             for star_metadata in self.context.get_all_stars():
-                star_name = star_metadata.name
+                star_name = str(getattr(star_metadata, "name", "") or "").strip()
+                star_instance = self._extract_star_instance(star_metadata)
 
-                if star_name == "astrbot_plugin_life_scheduler":
+                if star_name in self.DAYFLOW_PLUGIN_NAMES:
                     result["life_scheduler"] = True
-                    self._life_scheduler_instance = star_metadata.star_cls
-                    logger.info("[DailyAwareness] 检测到 life_scheduler 插件，将获取日程数据")
+                    self._life_scheduler_instance = star_instance
+                    logger.info(f"[DailyAwareness] 检测到日程插件 {star_name}，将获取日程数据")
 
                 elif star_name == "astrbot_plugin_livingmemory":
                     result["livingmemory"] = True
-                    self._livingmemory_instance = star_metadata.star_cls
+                    self._livingmemory_instance = star_instance
                     logger.info("[DailyAwareness] 检测到 livingmemory 插件，日记将存入记忆系统")
 
             self._has_life_scheduler = result["life_scheduler"]
             self._has_livingmemory = result["livingmemory"]
 
             if not result["life_scheduler"]:
-                logger.info("[DailyAwareness] 未检测到 life_scheduler 插件，将仅基于对话进行思考")
+                logger.info("[DailyAwareness] 未检测到 Dayflow 日程插件，将仅基于对话进行思考")
 
             if not result["livingmemory"]:
                 logger.info("[DailyAwareness] 未检测到 livingmemory 插件，日记将仅本地存储")
@@ -52,26 +65,48 @@ class DependencyManager:
 
     @property
     def has_life_scheduler(self) -> bool:
-        """是否存在 life_scheduler 插件"""
+        """是否存在日程插件"""
         if self._has_life_scheduler is None:
             self.check_dependencies()
-        return self._has_life_scheduler
+        return bool(self._has_life_scheduler)
 
     @property
     def has_livingmemory(self) -> bool:
         """是否存在 livingmemory 插件"""
         if self._has_livingmemory is None:
             self.check_dependencies()
-        return self._has_livingmemory
+        return bool(self._has_livingmemory)
 
-    async def get_schedule_data(self) -> dict:
+    async def get_schedule_data(
+        self,
+        session_id: str | None = None,
+        persona_name: str | None = None,
+        debug: bool = False,
+    ) -> dict:
         """获取日程数据"""
         if not self.has_life_scheduler:
+            if debug:
+                logger.info("[DailyAwareness][debug] get_schedule_data: 未检测到日程插件")
             return {}
 
         try:
-            if self._life_scheduler_instance and hasattr(self._life_scheduler_instance, "get_life_context"):
-                return await self._life_scheduler_instance.get_life_context()
+            target = self._life_scheduler_instance
+            if target is None:
+                self.check_dependencies()
+                target = self._life_scheduler_instance
+
+            if target and hasattr(target, "get_life_context"):
+                data = await target.get_life_context(session_id=session_id, persona_name=persona_name)
+                data = data if isinstance(data, dict) else {}
+                if debug:
+                    logger.info(
+                        f"[DailyAwareness][debug] get_schedule_data success: session={session_id}, persona={persona_name}, "
+                        f"outfit={str(data.get('outfit', ''))[:120]}, schedule={str(data.get('schedule', ''))[:300]}"
+                    )
+                return data
+
+            if debug:
+                logger.info("[DailyAwareness][debug] get_schedule_data: 日程插件存在但未找到 get_life_context 接口")
         except Exception as e:
             logger.warning(f"[DailyAwareness] 获取日程数据失败: {e}")
 

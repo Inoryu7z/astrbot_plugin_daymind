@@ -50,13 +50,23 @@ class DiaryGenerator:
     ) -> Optional[str]:
         """生成日记（即使没有思考记录也能基于日程生成）"""
         try:
-            schedule_data = await self.dependency_manager.get_schedule_data()
+            schedule_data = await self.dependency_manager.get_schedule_data(
+                session_id=session_id,
+                persona_name=persona_name,
+                debug=bool(self.config.get("debug_mode", False)),
+            )
             resolved_name = persona_name
             resolved_desc = persona_desc
             if session_id and (not resolved_name or not resolved_desc):
                 persona_ctx = await self.dependency_manager.resolve_persona_context(session_id)
                 resolved_name = resolved_name or persona_ctx.get("persona_name")
                 resolved_desc = resolved_desc or persona_ctx.get("persona_desc")
+
+            if self.config.get("debug_mode", False):
+                logger.info(
+                    f"[DiaryGenerator][debug] generate params: session={session_id}, persona={resolved_name}, reflections={len(reflections)}, "
+                    f"schedule_outfit={str(schedule_data.get('outfit', ''))[:120]}, schedule={str(schedule_data.get('schedule', ''))[:300]}"
+                )
 
             recent_diaries = self._load_recent_diaries(date_str, resolved_name)
             prompt = self._build_prompt(
@@ -129,6 +139,9 @@ class DiaryGenerator:
             history_count = 0 if recent_diaries_text == "无历史日记参考" else recent_diaries_text.count("\n\n") + 1
             logger.info(
                 f"[DiaryGenerator] 历史日记参考: count={history_count}, length={len(recent_diaries_text)}, date={date_str}, persona={persona_name_text}"
+            )
+            logger.info(
+                f"[DiaryGenerator][debug] prompt state_info={state_info.strip()[:500]}, reflections_preview={reflections_str[:500]}"
             )
 
         try:

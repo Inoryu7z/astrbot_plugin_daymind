@@ -35,7 +35,11 @@ class ReflectionGenerator:
     ) -> Optional[str]:
         """生成思考内容"""
         try:
-            schedule_data = await self.dependency_manager.get_schedule_data()
+            schedule_data = await self.dependency_manager.get_schedule_data(
+                session_id=session_id,
+                persona_name=persona_name,
+                debug=bool(self.config.get("debug_mode", False)),
+            )
 
             recent_messages = []
             counterpart_info = {
@@ -56,6 +60,13 @@ class ReflectionGenerator:
                 persona_ctx = await self.dependency_manager.resolve_persona_context(session_id)
                 resolved_name = resolved_name or persona_ctx.get("persona_name")
                 resolved_desc = resolved_desc or persona_ctx.get("persona_desc")
+
+            if self.config.get("debug_mode", False):
+                logger.info(
+                    f"[ReflectionGenerator][debug] generate params: session={session_id}, persona={resolved_name}, "
+                    f"recent_messages={len(recent_messages)}, last_awareness_len={len(last_awareness_text or '')}, "
+                    f"schedule_outfit={str(schedule_data.get('outfit', ''))[:120]}, schedule={str(schedule_data.get('schedule', ''))[:300]}"
+                )
 
             prompt = self._build_prompt(
                 current_time,
@@ -153,6 +164,11 @@ class ReflectionGenerator:
         except KeyError as e:
             logger.warning(f"[ReflectionGenerator] 模板变量缺失: {e}")
             prompt = template
+
+        if self.config.get("debug_mode", False):
+            logger.info(
+                f"[ReflectionGenerator][debug] prompt state_info={state_info.strip()[:500]}, persona={persona_name_text}, counterpart={current_counterpart}"
+            )
 
         return prompt
 

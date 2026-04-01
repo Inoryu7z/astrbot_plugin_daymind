@@ -109,6 +109,9 @@ class AwarenessScheduler:
         else:
             self.config[key] = value
 
+    def _is_debug_mode(self) -> bool:
+        return bool(self.config.get("debug_mode", False))
+
     def load_runtime_config(self, runtime_config: dict[str, Any] | None):
         runtime_config = runtime_config or {}
         if "reflection_retention_days" in runtime_config:
@@ -194,9 +197,11 @@ class AwarenessScheduler:
                 "last_diary_date": "",
                 "last_diary_check_minute": -1,
                 "diary_generated_today": False,
+                "last_auto_diary_trigger_key": "",
                 "diary_memory_version_counter": {},
                 # 心情系统字段
                 "current_mood": None,
+                "previous_mood": None,
                 "today_moods": [],
             }
         return self.persona_states[persona_name]
@@ -211,9 +216,11 @@ class AwarenessScheduler:
                 "last_diary_date": state.get("last_diary_date", ""),
                 "last_diary_check_minute": int(state.get("last_diary_check_minute", -1) or -1),
                 "diary_generated_today": bool(state.get("diary_generated_today", False)),
+                "last_auto_diary_trigger_key": str(state.get("last_auto_diary_trigger_key") or ""),
                 "diary_memory_version_counter": dict(state.get("diary_memory_version_counter", {}) or {}),
                 # 心情系统导出
                 "current_mood": state.get("current_mood"),
+                "previous_mood": state.get("previous_mood"),
                 "today_moods": list(state.get("today_moods", []) or []),
             }
         return payload
@@ -234,9 +241,11 @@ class AwarenessScheduler:
             item["last_diary_date"] = str(state.get("last_diary_date") or "")
             item["last_diary_check_minute"] = self._safe_int(state.get("last_diary_check_minute"), -1)
             item["diary_generated_today"] = bool(state.get("diary_generated_today", False))
+            item["last_auto_diary_trigger_key"] = str(state.get("last_auto_diary_trigger_key") or "")
             item["diary_memory_version_counter"] = dict(state.get("diary_memory_version_counter") or {})
             # 心情系统恢复
             item["current_mood"] = state.get("current_mood") or None
+            item["previous_mood"] = state.get("previous_mood") or None
             item["today_moods"] = list(state.get("today_moods", []) or [])
 
     def import_legacy_single_state(self, reflections: list[str], current_text: str, diary_generated_today: bool, last_diary_date: str):
@@ -275,7 +284,24 @@ class AwarenessScheduler:
         state = self.persona_states.get(normalized)
         if not state:
             return None
-        return state.get("current_mood")
+        current = state.get("current_mood")
+        if not current:
+            return None
+        current_copy = dict(current)
+        previous = state.get("previous_mood")
+        if previous:
+            current_copy["previous_mood"] = previous
+        return current_copy
+
+    def get_previous_mood_for_persona(self, persona_name: str | None) -> dict | None:
+        normalized = self._normalize_persona_name(persona_name)
+        if not normalized:
+            return None
+        state = self.persona_states.get(normalized)
+        if not state:
+            return None
+        previous = state.get("previous_mood")
+        return dict(previous) if isinstance(previous, dict) else None
 
     def get_today_moods_for_persona(self, persona_name: str | None, limit: int = 10) -> list[dict]:
         """获取指定人格今日的心情历史"""
@@ -309,8 +335,10 @@ class AwarenessScheduler:
         state["last_diary_date"] = today_str
         state["last_diary_check_minute"] = -1
         state["diary_generated_today"] = False
+        state["last_auto_diary_trigger_key"] = ""
         # 心情系统重置
         state["current_mood"] = None
+        state["previous_mood"] = None
         state["today_moods"] = []
 
     async def reset_today_reflections(self, persona_name: str | None = None) -> dict[str, Any]:
@@ -338,6 +366,7 @@ class AwarenessScheduler:
         state["current_awareness_text"] = ""
         state["last_reflection_time"] = None
         state["current_mood"] = None
+        state["previous_mood"] = None
         state["today_moods"] = []
         self.last_dedupe_hit = False
         self.last_dedupe_mode = "none"
@@ -690,17 +719,53 @@ class AwarenessScheduler:
 
                 auto_diary_enabled = self.config.get("enable_auto_diary", True)
                 current_total_minutes = now.hour * 60 + now.minute
+                target_total_minutes = diary_hour * 60 + diary_minute
+                trigger_key = f"{today_str}@{diary_hour:02d}:{diary_minute:02d}"
 
-                if auto_diary_enabled and now.hour == diary_hour and now.minute == diary_minute:
+                if auto_diary_enabled:
                     for persona_name in enabled_personas:
                         state = self._ensure_persona_state(persona_name)
-                        if state.get("last_diary_check_minute") == current_total_minutes:
+
+                        # 自动任务去重与“是否允许手动覆盖”解耦：
+                        # 只要已过设定时间，且今天这个自动触发 key 还没执行过，就触发一次。
+                        # 即使错过 exact minute，也会在后续轮询补触发；
+                        # 即使 allow_overwrite_today_diary=True，也不会因重载而重复自动生成。
+                        has_reached_target = current_total_minutes >= target_total_minutes
+                        last_auto_trigger_key = str(state.get("last_auto_diary_trigger_key") or "")
+
+                        if not has_reached_target:
+                            if self._is_debug_mode():
+                                logger.info(
+                                    f"[Scheduler][debug] 日记未到触发时间: persona={persona_name}, now={now.strftime('%H:%M')}, target={diary_hour:02d}:{diary_minute:02d}, trigger_key={trigger_key}"
+                                )
                             continue
+
+                        if last_auto_trigger_key == trigger_key:
+                            if self._is_debug_mode():
+                                logger.info(
+                                    f"[Scheduler][debug] 日记已完成本时段自动触发: persona={persona_name}, trigger_key={trigger_key}"
+                                )
+                            continue
+
                         state["last_diary_check_minute"] = current_total_minutes
-                        if state.get("diary_generated_today") and not self.config.get("allow_overwrite_today_diary", False):
-                            logger.info(f"[Scheduler] 跳过日记生成：{today_str} persona={persona_name} 今日日记已生成")
-                            continue
-                        await self._generate_and_push_diary(today_str, persona_name)
+                        state["last_auto_diary_trigger_key"] = trigger_key
+
+                        if self._is_debug_mode():
+                            logger.info(
+                                f"[Scheduler][debug] 触发自动日记: persona={persona_name}, now={now.strftime('%H:%M')}, target={diary_hour:02d}:{diary_minute:02d}, trigger_key={trigger_key}, overwrite_today={bool(self.config.get('allow_overwrite_today_diary', False))}"
+                            )
+
+                        result = await self._generate_and_push_diary(today_str, persona_name)
+                        status = str((result or {}).get("status") or "")
+                        if status not in {"success", "exists"}:
+                            # 失败时释放自动锁，允许后续轮询再次补触发；
+                            # 成功/已存在则保留锁，避免重载后重复自动生成。
+                            if str(state.get("last_auto_diary_trigger_key") or "") == trigger_key:
+                                state["last_auto_diary_trigger_key"] = ""
+                            if self._is_debug_mode():
+                                logger.info(
+                                    f"[Scheduler][debug] 自动日记未完成，已释放自动触发锁: persona={persona_name}, trigger_key={trigger_key}, status={status or 'unknown'}"
+                                )
 
                 auto_reflection_enabled = self.config.get("enable_auto_reflection", True)
                 if auto_reflection_enabled:
@@ -799,18 +864,29 @@ class AwarenessScheduler:
         self.last_diary_error_time = None
 
     async def select_reflection_session(self, persona_name: str) -> str | None:
+        # 先从消息缓存里找
         recent_session_ids = await self.message_cache.get_recent_session_ids()
         for session_id in recent_session_ids:
             if self.session_persona_map.get(session_id) == persona_name:
                 self.last_selected_session_id = session_id
                 self.last_selected_session_source = "recent_message"
                 return session_id
+
+        # 再从所有缓存会话里找
         session_ids = await self.message_cache.get_all_session_ids()
         for session_id in session_ids:
             if self.session_persona_map.get(session_id) == persona_name:
                 self.last_selected_session_id = session_id
                 self.last_selected_session_source = "message_cache"
                 return session_id
+
+        # 回退：直接从已绑定的映射表里找第一个匹配的人格会话
+        for sid, pname in self.session_persona_map.items():
+            if pname == persona_name:
+                self.last_selected_session_id = sid
+                self.last_selected_session_source = "persona_map_fallback"
+                return sid
+
         self.last_selected_session_id = None
         self.last_selected_session_source = "none"
         return None
@@ -917,7 +993,10 @@ class AwarenessScheduler:
 
             selected_session_id = session_id or await self.select_reflection_session(persona_name)
             if not selected_session_id:
-                logger.debug(f"[Scheduler] 跳过思考：persona={persona_name} 暂无会话")
+                if self._is_debug_mode():
+                    logger.info(f"[Scheduler][debug] 跳过思考：persona={persona_name} 暂无可用会话（session_persona_map={list(self.session_persona_map.keys())[:5]}）")
+                else:
+                    logger.debug(f"[Scheduler] 跳过思考：persona={persona_name} 暂无会话")
                 return {"status": "skipped", "message": f"人格 {persona_name} 暂无可用会话"}
 
             logger.debug(f"[Scheduler] 开始思考... persona={persona_name}, session={selected_session_id}, time={current_time_str}")
@@ -957,8 +1036,13 @@ class AwarenessScheduler:
                 mood_result = None
                 if self.mood_manager and self.mood_manager.is_mood_enabled():
                     try:
-                        schedule_data = await self.dependency_manager.get_schedule_data()
+                        schedule_data = await self.dependency_manager.get_schedule_data(
+                            session_id=selected_session_id,
+                            persona_name=persona_name,
+                            debug=self._is_debug_mode(),
+                        )
                         recent_reflections = list(state.get("today_reflections", []) or [])
+                        previous_mood = dict(state.get("current_mood") or {}) if state.get("current_mood") else None
                         mood_result = await self.mood_manager.generate_mood(
                             reflection_text=result,
                             schedule_data=schedule_data,
@@ -967,10 +1051,17 @@ class AwarenessScheduler:
                             persona_desc=resolved_desc,
                         )
                         mood_result = self.mood_manager.validate_mood(mood_result)
+                        if previous_mood:
+                            mood_result["previous_mood"] = previous_mood
+                        state["previous_mood"] = previous_mood
                         state["current_mood"] = mood_result
                         state.setdefault("today_moods", []).append(mood_result)
                         self._trim_today_moods(persona_name)
                         logger.info(f"[Scheduler] 心情生成完成: persona={persona_name}, mood={mood_result.get('label')}")
+                        if self._is_debug_mode():
+                            logger.info(
+                                f"[Scheduler][debug] mood_transition persona={persona_name}, previous={(previous_mood or {}).get('label', '无')}, current={mood_result.get('label', '未知')}, source={mood_result.get('source', 'unknown')}"
+                            )
                     except Exception as e:
                         logger.warning(f"[Scheduler] 心情生成失败: {e}")
 
@@ -1069,7 +1160,7 @@ class AwarenessScheduler:
             state["current_awareness_text"] = ""
             state["last_diary_date"] = date_str
             self._clear_diary_error()
-            return {"status": "success", "content": diary_content, "marked_deleted": int(regeneration_info.get("updated", 0) or 0)}
+            return {"status": "success", "content": diary_content, "marked_deleted": int(regeneration_info.get('updated', 0) or 0)}
 
         except Exception as e:
             logger.error(f"[Scheduler] 日记生成流程出错: {e}", exc_info=True)
@@ -1227,9 +1318,11 @@ class AwarenessScheduler:
 
         # 获取当前心情信息
         current_mood = None
+        previous_mood = None
         today_moods_count = 0
         if state:
-            current_mood = state.get("current_mood")
+            current_mood = self.get_current_mood_for_persona(normalized)
+            previous_mood = state.get("previous_mood")
             today_moods_count = len(state.get("today_moods", []) or [])
 
         return {
@@ -1245,6 +1338,7 @@ class AwarenessScheduler:
             "silent_hours": silent_status,
             "diary_generated_today": bool(state.get("diary_generated_today", False)) if state else False,
             "last_diary_date": state.get("last_diary_date") if state else "",
+            "last_auto_diary_trigger_key": state.get("last_auto_diary_trigger_key", "") if state else "",
             "primary_memory_target": self.last_selected_session_id,
             "primary_persona_id": self._get_primary_persona_id(normalized),
             "allow_overwrite_today_diary": self.config.get("allow_overwrite_today_diary", False),
@@ -1274,5 +1368,6 @@ class AwarenessScheduler:
             "enable_mood_system": self.config.get("enable_mood_system", True),
             "inject_mood_into_reply": self.config.get("inject_mood_into_reply", True),
             "current_mood": current_mood,
+            "previous_mood": previous_mood,
             "today_moods_count": today_moods_count,
         }
