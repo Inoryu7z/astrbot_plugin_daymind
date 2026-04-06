@@ -596,6 +596,34 @@ class DayMindPlugin(Star, PersonaConfigMixin):
 
         yield event.plain_result(f"人格：{normalized_persona}\n日期：{today_str}\n\n{content}")
 
+    @filter.command("昨日日记", alias={"查看昨日日记", "daymind_diary_yesterday"})
+    async def yesterday_diary(self, event: AstrMessageEvent):
+        if not self.scheduler:
+            yield event.plain_result("调度器未初始化")
+            return
+
+        _, persona_name, _ = await self._resolve_event_persona(event)
+        normalized_persona = self._canonical_persona_name(persona_name)
+        if not normalized_persona:
+            yield event.plain_result("当前会话未识别到人格")
+            return
+        if not self.scheduler.is_persona_enabled(normalized_persona):
+            yield event.plain_result(f"当前人格未启用 DayMind：{normalized_persona}")
+            return
+
+        yesterday_str = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        diary_item = self.scheduler.get_diary_item(yesterday_str, normalized_persona)
+        if not diary_item:
+            yield event.plain_result(f"当前人格 {normalized_persona} 在 {yesterday_str} 的日记不存在")
+            return
+
+        content = str(diary_item.get("content") or "").strip()
+        if not content:
+            yield event.plain_result(f"当前人格 {normalized_persona} 在 {yesterday_str} 的日记内容为空")
+            return
+
+        yield event.plain_result(f"人格：{normalized_persona}\n日期：{yesterday_str}\n\n{content}")
+
     @filter.command("手动思考")
     async def manual_reflection(self, event: AstrMessageEvent):
         if not self.scheduler:
