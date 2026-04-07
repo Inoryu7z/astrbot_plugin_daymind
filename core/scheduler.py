@@ -8,6 +8,8 @@ import hashlib
 from typing import Optional, Any
 from pathlib import Path
 from astrbot.api import logger
+from astrbot.api.message_components import Plain
+from astrbot.core.message.message_event_result import MessageChain
 
 from .reflection import ReflectionGenerator
 from .diary import DiaryGenerator
@@ -1336,12 +1338,13 @@ class AwarenessScheduler(PersonaConfigMixin):
             session_id=session_id,
             persona_name=persona_name,
             persona_desc=persona_desc,
+            target_date=today_str,
             debug=self._is_debug_mode(),
         )
         if schedule_result.get("status") == "failed":
             return {
                 "status": "failed_schedule",
-                "message": schedule_result.get("message") or "今日日程不可用",
+                "message": schedule_result.get("message") or "目标日期日程不可用",
                 "schedule_data": schedule_result.get("data") or {},
                 "schedule_generated_now": False,
             }
@@ -1373,6 +1376,14 @@ class AwarenessScheduler(PersonaConfigMixin):
                     primary_persona_desc = persona_ctx.get("persona_desc")
                 resolved_persona_id = persona_ctx.get("persona_id") if persona_ctx else None
                 self._touch_session_persona(target, persona_name)
+            if not isinstance(ensured_schedule, dict):
+                ensured_schedule = await self.dependency_manager.ensure_today_schedule(
+                    session_id=target,
+                    persona_name=persona_name,
+                    persona_desc=primary_persona_desc,
+                    target_date=date_str,
+                    debug=self._is_debug_mode(),
+                )
             diary_content = await self._run_diary_generation_with_retries(
                 date_str=date_str,
                 persona_name=persona_name,
@@ -1551,7 +1562,8 @@ class AwarenessScheduler(PersonaConfigMixin):
                 logger.error(f"[Scheduler] 推送日记到 {target} 失败: {e}", exc_info=True)
 
     async def _send_message_to_target(self, target: str, content: str):
-        await self.context.send_message(target, content)
+        chain = MessageChain(chain=[Plain(text=str(content or ""))])
+        await self.context.send_message(target, chain)
         logger.info(f"[Scheduler] 日记已推送到: {target}")
 
     def get_status(self, persona_name: str | None = None) -> dict:

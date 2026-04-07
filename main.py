@@ -150,7 +150,7 @@ class DayMindPlugin(Star, PersonaConfigMixin):
             self._save_state()
 
     async def initialize(self):
-        version_time = f"{PLUGIN_VERSION} - mood_system"
+        version_time = f"{PLUGIN_VERSION}"
         logger.info(f"[DayMind] ========== 版本 {version_time} 已加载 ==========")
 
         self.dependency_manager.check_dependencies()
