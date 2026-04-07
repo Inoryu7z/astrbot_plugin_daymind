@@ -57,7 +57,7 @@ class DiaryGenerator(PersonaConfigMixin):
         ensured_schedule: dict | None = None,
         **kwargs,
     ) -> Optional[str]:
-        """生成日记（缺日程时自动尝试补生成今日日程）"""
+        """生成日记（缺日程时自动尝试补生成目标日期日程）"""
         try:
             resolved_name = self._canonical_persona_name(persona_name)
             resolved_desc = persona_desc
@@ -72,20 +72,21 @@ class DiaryGenerator(PersonaConfigMixin):
                     session_id=session_id,
                     persona_name=resolved_name,
                     persona_desc=resolved_desc,
+                    target_date=date_str,
                     debug=bool(self.config.get("debug_mode", False)),
                 )
             schedule_data = schedule_result.get("data") or {}
             if schedule_result.get("status") == "failed":
                 logger.warning(
-                    f"[DiaryGenerator] 今日日程不可用，跳过日记生成: session={session_id}, "
-                    f"persona={resolved_name}, reason={schedule_result.get('message', '')}"
+                    f"[DiaryGenerator] 目标日期日程不可用，跳过日记生成: session={session_id}, "
+                    f"persona={resolved_name}, target_date={date_str}, reason={schedule_result.get('message', '')}"
                 )
                 return None
 
             if self.config.get("debug_mode", False):
                 logger.info(
                     f"[DiaryGenerator][debug] generate params: session={session_id}, persona={resolved_name}, reflections={len(reflections)}, "
-                    f"schedule_status={schedule_result.get('status')}, generated_now={schedule_result.get('generated_now')}, "
+                    f"schedule_status={schedule_result.get('status')}, generated_now={schedule_result.get('generated_now')}, target_date={date_str}, "
                     f"schedule_outfit={str(schedule_data.get('outfit', ''))[:120]}, schedule={str(schedule_data.get('schedule', ''))[:300]}"
                 )
 

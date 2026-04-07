@@ -44,7 +44,7 @@ class DayMindWebUI:
 
         self._server: uvicorn.Server | None = None
         self._server_task: asyncio.Task | None = None
-        self._app = FastAPI(title="DayMind WebUI", version="1.1.0")
+        self._app = FastAPI(title="DayMind WebUI", version="1.3.1")
         self._setup_routes()
 
     async def start(self):
@@ -130,7 +130,7 @@ class DayMindWebUI:
 
         @self._app.get("/api/health")
         async def health():
-            return {"status": "ok", "plugin": "daymind", "version": "1.1.0"}
+            return {"status": "ok", "plugin": "daymind", "version": "1.3.1"}
 
         @self._app.get("/api/status")
         async def status(request: Request, persona_name: str | None = None, x_daymind_password: str | None = Header(default=None)):

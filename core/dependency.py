@@ -157,6 +157,7 @@ class DependencyManager:
         self,
         session_id: str | None = None,
         persona_name: str | None = None,
+        target_date: str | None = None,
         debug: bool = False,
     ) -> dict:
         """获取日程数据"""
@@ -172,11 +173,11 @@ class DependencyManager:
                 target = self._life_scheduler_instance
 
             if target and hasattr(target, "get_life_context"):
-                data = await target.get_life_context(session_id=session_id, persona_name=persona_name)
+                data = await target.get_life_context(session_id=session_id, persona_name=persona_name, target_date=target_date)
                 data = data if isinstance(data, dict) else {}
                 if debug:
                     logger.info(
-                        f"[DayMind][debug] get_schedule_data success: session={session_id}, persona={persona_name}, "
+                        f"[DayMind][debug] get_schedule_data success: session={session_id}, persona={persona_name}, target_date={target_date or ''}, "
                         f"outfit={str(data.get('outfit', ''))[:120]}, schedule={str(data.get('schedule', ''))[:300]}"
                     )
                 return data
@@ -193,29 +194,36 @@ class DependencyManager:
         session_id: str | None = None,
         persona_name: str | None = None,
         persona_desc: str | None = None,
+        target_date: str | None = None,
         debug: bool = False,
     ) -> dict[str, Any]:
-        """确保当前人格存在今日日程；若缺失则尝试调用 Dayflow 自动补生成。"""
+        """确保当前人格存在目标日期日程；若缺失则尝试调用 Dayflow 自动补生成。"""
         result: dict[str, Any] = {
             "status": "failed",
-            "message": "今日日程不可用",
+            "message": "目标日期日程不可用",
             "data": {},
             "generated_now": False,
             "persona_name": persona_name,
+            "target_date": target_date,
         }
 
-        initial_data = await self.get_schedule_data(session_id=session_id, persona_name=persona_name, debug=debug)
+        initial_data = await self.get_schedule_data(
+            session_id=session_id,
+            persona_name=persona_name,
+            target_date=target_date,
+            debug=debug,
+        )
         if not self._is_missing_today_schedule(initial_data):
             result.update({
                 "status": "existing",
-                "message": "今日日程已存在",
+                "message": "目标日期日程已存在",
                 "data": initial_data,
                 "generated_now": False,
             })
             return result
 
         if not self.has_life_scheduler:
-            result["message"] = "未检测到 Dayflow 日程插件，无法自动补生成今日日程"
+            result["message"] = "未检测到 Dayflow 日程插件，无法自动补生成目标日期日程"
             return result
 
         target = self._life_scheduler_instance
@@ -223,12 +231,12 @@ class DependencyManager:
             self.check_dependencies()
             target = self._life_scheduler_instance
         if target is None:
-            result["message"] = "未获取到 Dayflow 插件实例，无法自动补生成今日日程"
+            result["message"] = "未获取到 Dayflow 插件实例，无法自动补生成目标日期日程"
             return result
 
         service = getattr(target, "service", None)
         if service is None:
-            result["message"] = "Dayflow 插件未暴露 service，无法自动补生成今日日程"
+            result["message"] = "Dayflow 插件未暴露 service，无法自动补生成目标日期日程"
             return result
 
         try:
@@ -247,21 +255,26 @@ class DependencyManager:
             if debug:
                 logger.info(
                     f"[DayMind][debug] ensure_today_schedule start: session={session_id}, requested_persona={persona_name}, "
-                    f"resolved_persona={resolved_persona_name}, store_key={store_key}"
+                    f"resolved_persona={resolved_persona_name}, store_key={store_key}, target_date={target_date or ''}"
                 )
 
             ok = await service.enter_generation(store_key)
             if not ok:
-                latest_data = await self.get_schedule_data(session_id=session_id, persona_name=resolved_persona_name, debug=debug)
+                latest_data = await self.get_schedule_data(
+                    session_id=session_id,
+                    persona_name=resolved_persona_name,
+                    target_date=target_date,
+                    debug=debug,
+                )
                 if not self._is_missing_today_schedule(latest_data):
                     result.update({
                         "status": "existing",
-                        "message": "今日日程已由其他任务生成",
+                        "message": "目标日期日程已由其他任务生成",
                         "data": latest_data,
                         "generated_now": False,
                     })
                     return result
-                result["message"] = f"当前人格 {resolved_persona_name or store_key} 的今日日程正在生成中，请稍后再试"
+                result["message"] = f"当前人格 {resolved_persona_name or store_key} 的目标日期日程正在生成中，请稍后再试"
                 return result
 
             try:
@@ -269,28 +282,34 @@ class DependencyManager:
                     event=None,
                     persona_name=store_key,
                     persona_desc=resolved_persona_desc or f"人格：{resolved_persona_name or store_key}。",
+                    target_date=target_date,
                 )
                 if generated.get("meta", {}).get("error"):
-                    result["message"] = generated.get("memo") or "自动补生成今日日程失败"
+                    result["message"] = generated.get("memo") or "自动补生成目标日期日程失败"
                     return result
                 service.save_generated(store_key, generated)
             finally:
                 await service.exit_generation(store_key)
 
-            final_data = await self.get_schedule_data(session_id=session_id, persona_name=resolved_persona_name, debug=debug)
+            final_data = await self.get_schedule_data(
+                session_id=session_id,
+                persona_name=resolved_persona_name,
+                target_date=target_date,
+                debug=debug,
+            )
             if self._is_missing_today_schedule(final_data):
-                result["message"] = "今日日程补生成后仍不可用，请检查 Dayflow 存储链路"
+                result["message"] = "目标日期日程补生成后仍不可用，请检查 Dayflow 存储链路"
                 result["data"] = final_data or {}
                 return result
 
             result.update({
                 "status": "generated",
-                "message": "已自动补生成今日日程",
+                "message": "已自动补生成目标日期日程",
                 "data": final_data,
                 "generated_now": True,
             })
             logger.info(
-                f"[DayMind] 已自动补生成今日日程: session_id={session_id}, persona={resolved_persona_name or store_key}"
+                f"[DayMind] 已自动补生成目标日期日程: session_id={session_id}, persona={resolved_persona_name or store_key}, target_date={target_date or ''}"
             )
             return result
 
