@@ -101,7 +101,7 @@ class DiaryGenerator(PersonaConfigMixin):
             )
             result = await self._call_llm(prompt, resolved_name)
             if result:
-                result = self._post_process_result(result)
+                result = self._post_process_result(result, date_str)
             return result
 
         except Exception as e:
@@ -287,6 +287,7 @@ class DiaryGenerator(PersonaConfigMixin):
 为保证私人日记的阅读节奏，可根据场景切换、情绪转折或时间推进自然分段。
 
 ## 输出规范
+日记正文的第一行必须是日期，格式为"XXXX年X月X日"（例如"2026年4月19日"），独占一行，后面再写正文。
 请严格匹配当前模式定义，同时遵守{length_hint}的长度要求，直接输出第一人称的日记正文，不要任何额外说明、标题或前缀。
 
 【模式定义】
@@ -409,7 +410,7 @@ class DiaryGenerator(PersonaConfigMixin):
                 break
         return clipped.rstrip("，,；;：:") + "……"
 
-    def _post_process_result(self, text: str) -> str:
+    def _post_process_result(self, text: str, date_str: str = "") -> str:
         result = (text or "").strip()
         if not result:
             return ""
@@ -432,7 +433,42 @@ class DiaryGenerator(PersonaConfigMixin):
         if not re.search(r"[。！？!?]$", result) and result:
             result += "。"
 
+        if date_str and not self._first_line_has_date(result, date_str):
+            date_header = self._format_date_header(date_str)
+            result = f"{date_header}\n\n{result}"
+            logger.info(f"[DiaryGenerator] 日记首行缺少日期，已自动补全: {date_header}")
+
         return result
+
+    def _first_line_has_date(self, text: str, date_str: str) -> bool:
+        first_line = text.split("\n", 1)[0].strip()
+        if not first_line:
+            return False
+
+        try:
+            dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+            candidates = [
+                f"{dt.year}年{dt.month}月{dt.day}日",
+                f"{dt.year}年{dt.month:02d}月{dt.day:02d}日",
+                date_str,
+            ]
+            for candidate in candidates:
+                if candidate in first_line:
+                    return True
+        except Exception:
+            pass
+
+        if re.search(r"\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日", first_line):
+            return True
+
+        return False
+
+    def _format_date_header(self, date_str: str) -> str:
+        try:
+            dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+            return f"{dt.year}年{dt.month}月{dt.day}日"
+        except Exception:
+            return date_str
 
     async def _call_llm(self, prompt: str, persona_name: str | None = None) -> Optional[str]:
         provider_id = self._persona_value(persona_name, "diary_provider_id", "")
