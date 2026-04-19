@@ -1010,6 +1010,9 @@ class AwarenessScheduler(PersonaConfigMixin):
                     diary_candidate = self._seconds_until_persona_diary_trigger(persona_name, now, today_str)
                     if diary_candidate is not None:
                         sleep_candidates.append(diary_candidate)
+                    silent_end_candidate = self._seconds_until_persona_silent_ends(persona_name)
+                    if silent_end_candidate is not None:
+                        sleep_candidates.append(silent_end_candidate)
 
                 sleep_seconds = min(sleep_candidates) if sleep_candidates else 60.0
                 if self._is_debug_mode():
@@ -1193,6 +1196,14 @@ class AwarenessScheduler(PersonaConfigMixin):
         end_time = str(self._persona_value(persona_name, "silent_hours_end", self.config.get("silent_hours_end", "06:00")) or "06:00")
         checker = SilentHoursChecker(start_time=start_time, end_time=end_time, enabled=enabled)
         return checker.is_silent()
+
+    def _seconds_until_persona_silent_ends(self, persona_name: str | None) -> float | None:
+        persona_name = self._canonical_persona_name(persona_name)
+        enabled = bool(self._persona_value(persona_name, "silent_hours_enabled", self.config.get("silent_hours_enabled", True)))
+        start_time = str(self._persona_value(persona_name, "silent_hours_start", self.config.get("silent_hours_start", "00:00")) or "00:00")
+        end_time = str(self._persona_value(persona_name, "silent_hours_end", self.config.get("silent_hours_end", "06:00")) or "06:00")
+        checker = SilentHoursChecker(start_time=start_time, end_time=end_time, enabled=enabled)
+        return checker.seconds_until_silent_ends()
 
     def _get_persona_silent_status(self, persona_name: str | None) -> dict:
         persona_name = self._canonical_persona_name(persona_name)

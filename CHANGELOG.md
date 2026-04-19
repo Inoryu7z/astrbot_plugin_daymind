@@ -1,3 +1,14 @@
+### v1.3.4
+
+**🐛 静默时段调度修复**
+
+* 修复开启静默时段后，调度器在静默时段外也不会思考的问题。
+* 根因：静默时段内 `reflection_candidate` 返回 `None`，导致休眠候选只剩 `diary_candidate`（可能长达 24 小时），调度器一觉睡到第二天日记时间。
+* 新增 `SilentHoursChecker.seconds_until_silent_ends()` 方法计算距静默结束的秒数。
+* 调度器休眠计算现在会加入 `silent_end_candidate`，确保在静默时段结束时及时醒来开始思考。
+
+---
+
 ### v1.3.3
 
 **🧹 Legacy 清理**
