@@ -54,6 +54,25 @@ class SilentHoursChecker:
             # 不跨午夜：如 00:00 到 06:00
             return start_minutes <= current_minutes < end_minutes
     
+    def seconds_until_silent_ends(self) -> float | None:
+        """
+        计算距离静默时段结束还有多少秒
+
+        Returns:
+            float: 距离静默结束的秒数（至少 1.0），如果当前不在静默时段或未启用则返回 None
+        """
+        if not self.enabled or not self.is_silent():
+            return None
+
+        now = datetime.datetime.now()
+        end_dt = now.replace(hour=self.end_hour, minute=self.end_minute, second=0, microsecond=0)
+
+        if end_dt <= now:
+            end_dt += datetime.timedelta(days=1)
+
+        remaining = (end_dt - now).total_seconds()
+        return max(remaining, 1.0)
+
     def get_status(self) -> dict:
         """获取静默时段状态"""
         return {
