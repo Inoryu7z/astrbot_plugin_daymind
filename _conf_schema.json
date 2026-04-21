@@ -267,7 +267,13 @@
             "type": "string",
             "description": "静默结束时间（HH:MM）",
             "default": "06:00",
-            "hint": "静默时段结束时间。"
+            "hint": "静默时段结束时间。启用智能静默后作为兜底值使用。"
+          },
+          "smart_silent_hours": {
+            "type": "bool",
+            "description": "智能静默时段",
+            "default": false,
+            "hint": "开启后，自动从 DayFlow 日程的睡眠时段提取静默结束时间（即日程中第一个时段的结束时间），无需手动配置。若日程尚未生成或提取失败，则回退到上方手动配置的静默结束时间。需安装 DayFlow 日程插件。"
           },
           "diary_push_targets": {
             "type": "list",
