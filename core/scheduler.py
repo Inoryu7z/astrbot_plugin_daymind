@@ -70,6 +70,7 @@ class AwarenessScheduler(PersonaConfigMixin):
         self.is_running = False
         self.scheduler_task: Optional[asyncio.Task] = None
         self.persona_states: dict[str, dict[str, Any]] = {}
+        self._smart_silent_cache: dict[str, dict[str, str | None]] = {}
 
     async def start(self):
         if self.is_running:
@@ -961,6 +962,7 @@ class AwarenessScheduler(PersonaConfigMixin):
                 current_total_minutes = now.hour * 60 + now.minute
 
                 for persona_name in enabled_personas:
+                    await self._refresh_smart_silent_cache(persona_name)
                     state = self._ensure_persona_state(persona_name)
                     auto_diary_enabled = bool(self._persona_value(persona_name, "enable_auto_diary", True))
                     diary_hour, diary_minute = self._get_persona_diary_time(persona_name)
@@ -1205,11 +1207,71 @@ class AwarenessScheduler(PersonaConfigMixin):
             return "（暂无最近思考）"
         return "\n".join([f"- {x}" for x in recent])
 
+    @staticmethod
+    def _extract_sleep_end_from_timeline(timeline: list) -> str | None:
+        if not timeline or not isinstance(timeline, list):
+            return None
+        first = timeline[0]
+        if not isinstance(first, dict):
+            return None
+        time_start = str(first.get("time_start", "")).strip()
+        time_end = str(first.get("time_end", "")).strip()
+        if not time_end:
+            return None
+        try:
+            sh, sm = int(time_start.split(":")[0]), int(time_start.split(":")[1]) if ":" in time_start else 0
+            eh, em = int(time_end.split(":")[0]), int(time_end.split(":")[1]) if ":" in time_end else 0
+        except (ValueError, IndexError):
+            return None
+        start_minutes = sh * 60 + sm
+        end_minutes = eh * 60 + em
+        if start_minutes > 360:
+            return None
+        if end_minutes <= start_minutes:
+            return None
+        if end_minutes > 720:
+            return None
+        return time_end
+
+    async def _refresh_smart_silent_cache(self, persona_name: str):
+        persona_name = self._canonical_persona_name(persona_name)
+        smart_enabled = bool(self._persona_value(persona_name, "smart_silent_hours", self.config.get("smart_silent_hours", False)))
+        if not smart_enabled:
+            self._smart_silent_cache.pop(persona_name, None)
+            return
+        today_str = datetime.date.today().isoformat()
+        cached = self._smart_silent_cache.get(persona_name)
+        if cached and cached.get("date") == today_str and cached.get("sleep_end") is not None:
+            return
+        sleep_end = None
+        try:
+            if self.dependency_manager and self.dependency_manager.has_life_scheduler:
+                data = await self.dependency_manager.get_schedule_data(persona_name=persona_name)
+                if isinstance(data, dict):
+                    timeline = data.get("timeline", [])
+                    sleep_end = self._extract_sleep_end_from_timeline(timeline)
+        except Exception as e:
+            logger.debug(f"[Scheduler] 智能静默提取失败: persona={persona_name}, error={e}")
+        self._smart_silent_cache[persona_name] = {"date": today_str, "sleep_end": sleep_end}
+        if sleep_end:
+            logger.info(f"[Scheduler] 智能静默: persona={persona_name}, 从日程提取睡眠结束时间={sleep_end}")
+        elif self._is_debug_mode():
+            logger.debug(f"[Scheduler] 智能静默: persona={persona_name}, 未能提取睡眠结束时间，将使用兜底值")
+
+    def _get_effective_silent_end(self, persona_name: str) -> str:
+        persona_name = self._canonical_persona_name(persona_name)
+        smart_enabled = bool(self._persona_value(persona_name, "smart_silent_hours", self.config.get("smart_silent_hours", False)))
+        if smart_enabled:
+            cached = self._smart_silent_cache.get(persona_name)
+            if cached and cached.get("sleep_end"):
+                return cached["sleep_end"]
+        return str(self._persona_value(persona_name, "silent_hours_end", self.config.get("silent_hours_end", "06:00")) or "06:00")
+
     def _get_silent_checker(self, persona_name: str | None) -> SilentHoursChecker:
         persona_name = self._canonical_persona_name(persona_name)
         enabled = bool(self._persona_value(persona_name, "silent_hours_enabled", self.config.get("silent_hours_enabled", True)))
         start_time = str(self._persona_value(persona_name, "silent_hours_start", self.config.get("silent_hours_start", "00:00")) or "00:00")
-        end_time = str(self._persona_value(persona_name, "silent_hours_end", self.config.get("silent_hours_end", "06:00")) or "06:00")
+        end_time = self._get_effective_silent_end(persona_name)
         return SilentHoursChecker(start_time=start_time, end_time=end_time, enabled=enabled)
 
     def _is_persona_silent(self, persona_name: str | None) -> bool:
@@ -1219,7 +1281,18 @@ class AwarenessScheduler(PersonaConfigMixin):
         return self._get_silent_checker(persona_name).seconds_until_silent_ends()
 
     def _get_persona_silent_status(self, persona_name: str | None) -> dict:
-        return self._get_silent_checker(persona_name).get_status()
+        checker = self._get_silent_checker(persona_name)
+        status = checker.get_status()
+        persona_name = self._canonical_persona_name(persona_name)
+        smart_enabled = bool(self._persona_value(persona_name, "smart_silent_hours", self.config.get("smart_silent_hours", False)))
+        if smart_enabled:
+            cached = self._smart_silent_cache.get(persona_name)
+            status["smart_silent_hours"] = True
+            status["smart_sleep_end"] = cached.get("sleep_end") if cached else None
+            status["fallback_end"] = str(self._persona_value(persona_name, "silent_hours_end", self.config.get("silent_hours_end", "06:00")) or "06:00")
+        else:
+            status["smart_silent_hours"] = False
+        return status
 
     def _get_persona_diary_time(self, persona_name: str | None) -> tuple[int, int]:
         persona_name = self._canonical_persona_name(persona_name)

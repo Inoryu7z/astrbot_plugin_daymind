@@ -20,6 +20,15 @@
 * `MOOD_DECAY_INTERVAL_MINUTES = 60`：心情衰减间隔（分钟）。
 * `MOOD_DECAY_PATHS`：9 条衰减路径，可按需扩展。
 
+**4. 🌙 智能静默时段（DayFlow 联动）**
+
+* 新增「智能静默时段」配置项 `smart_silent_hours`，开启后自动从 DayFlow 日程的 timeline 中提取睡眠时段结束时间作为静默结束时间。
+* 核心逻辑：读取日程 timeline 的第一个时段（睡眠时段），取其 `time_end` 作为静默结束时间，无需手动配置。
+* 安全约束：仅当第一个时段起始时间在 06:00 之前、结束时间不超过 12:00 时才采纳，避免误提取。
+* 兜底机制：若日程尚未生成或提取失败，自动回退到手动配置的 `silent_hours_end`。
+* 每日缓存：提取结果按日期缓存，避免重复读取日程数据；日期切换时自动刷新。
+* 静默状态接口新增 `smart_silent_hours`、`smart_sleep_end`、`fallback_end` 字段，方便 WebUI 展示。
+
 ---
 
 ### v1.3.5
