@@ -16,7 +16,7 @@ from .diary import DiaryGenerator
 from .dependency import DependencyManager
 from .message_cache import MessageCache
 from .silent_hours import SilentHoursChecker
-from .mood import MoodManager
+from .mood import MoodManager, extract_mood_baseline_from_diary_text, MOOD_DECAY_INTERVAL_MINUTES
 from .persona_utils import PersonaConfigMixin
 
 
@@ -242,6 +242,8 @@ class AwarenessScheduler(PersonaConfigMixin):
                 "last_dedupe_source": None,
                 "last_selected_session_id": None,
                 "last_selected_session_source": "none",
+                "mood_baseline": "平静",
+                "last_mood_decay_time": None,
             }
         return self.persona_states[persona_name]
 
@@ -422,6 +424,17 @@ class AwarenessScheduler(PersonaConfigMixin):
         state["last_diary_failure_time"] = None
         state["last_diary_cooldown_until"] = None
         state["last_diary_failed_trigger_key"] = ""
+        state["last_mood_decay_time"] = None
+        baseline = "平静"
+        try:
+            yesterday = (datetime.datetime.strptime(today_str, "%Y-%m-%d") - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+            diary_item = self.get_diary_item(yesterday, persona_name)
+            if diary_item and diary_item.get("content"):
+                baseline = extract_mood_baseline_from_diary_text(diary_item["content"])
+        except Exception as e:
+            logger.debug(f"[Scheduler] 提取昨日日记基线失败: persona={persona_name}, error={e}")
+        state["mood_baseline"] = baseline
+        logger.info(f"[Scheduler] 心情基线初始化: persona={persona_name}, baseline={baseline}")
 
     async def reset_today_reflections(self, persona_name: str | None = None) -> dict[str, Any]:
         now = datetime.datetime.now()
@@ -1002,6 +1015,9 @@ class AwarenessScheduler(PersonaConfigMixin):
                                 logger.info(f"[Scheduler][debug] 触发自动思考: persona={persona_name}, now={now.strftime('%H:%M:%S')}")
                             await self._do_reflection(persona_name)
 
+                    if self.mood_manager and self.mood_manager.is_mood_enabled(persona_name):
+                        self._try_mood_decay(persona_name, now)
+
                 sleep_candidates = []
                 for persona_name in enabled_personas:
                     reflection_candidate = self._seconds_until_persona_reflection_due(persona_name, now)
@@ -1246,6 +1262,46 @@ class AwarenessScheduler(PersonaConfigMixin):
         if len(moods) > max_history:
             moods = moods[-max_history:]
         state["today_moods"] = moods
+
+    def _try_mood_decay(self, persona_name: str, now: datetime.datetime):
+        if not self.mood_manager:
+            return
+        persona_name = self._canonical_persona_name(persona_name)
+        if not persona_name:
+            return
+        state = self._ensure_persona_state(persona_name)
+        current_mood = state.get("current_mood")
+        if not current_mood or not isinstance(current_mood, dict):
+            return
+        baseline_label = str(state.get("mood_baseline") or "平静").strip()
+        last_decay_time = state.get("last_mood_decay_time")
+        if last_decay_time:
+            try:
+                elapsed = (now - last_decay_time).total_seconds() / 60.0
+            except Exception:
+                elapsed = MOOD_DECAY_INTERVAL_MINUTES + 1
+        else:
+            try:
+                mood_updated_at = str(current_mood.get("updated_at") or "").strip()
+                if mood_updated_at:
+                    mood_time = datetime.datetime.fromisoformat(mood_updated_at)
+                    elapsed = (now - mood_time).total_seconds() / 60.0
+                else:
+                    elapsed = MOOD_DECAY_INTERVAL_MINUTES + 1
+            except Exception:
+                elapsed = MOOD_DECAY_INTERVAL_MINUTES + 1
+        if elapsed < MOOD_DECAY_INTERVAL_MINUTES:
+            return
+        decayed = self.mood_manager.decay_current_mood(current_mood, baseline_label)
+        if not decayed:
+            return
+        state["previous_mood"] = self._simplify_mood(current_mood)
+        state["current_mood"] = decayed
+        state["last_mood_decay_time"] = now
+        state.setdefault("today_moods", []).append(decayed)
+        self._trim_today_moods(persona_name)
+        self._persist_state()
+        logger.info(f"[Scheduler] 心情衰减: persona={persona_name}, {current_mood.get('label')} → {decayed.get('label')}")
 
     def _trim_diary_memory_version_counter(self, counter: dict | None, keep_days: int | None = None) -> dict[str, int]:
         if not isinstance(counter, dict):
