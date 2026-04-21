@@ -137,6 +137,20 @@ LOCAL_MOOD_KEYWORDS = {
     },
 }
 
+MOOD_DECAY_PATHS = {
+    "期待": "安心",
+    "紧张": "烦躁",
+    "开心": "放松",
+    "委屈": "低落",
+    "疲惫": "低落",
+    "安心": "平静",
+    "放松": "平静",
+    "烦躁": "平静",
+    "低落": "平静",
+}
+
+MOOD_DECAY_INTERVAL_MINUTES = 60
+
 DEFAULT_MOOD = {
     "label": "平静",
     "sub_labels": [],
@@ -144,6 +158,43 @@ DEFAULT_MOOD = {
     "updated_at": None,
     "source": "default",
 }
+
+
+def compute_mood_decay(current_label: str, baseline_label: str) -> str | None:
+    if current_label == baseline_label:
+        return None
+    if current_label == "平静":
+        return None
+    next_step = MOOD_DECAY_PATHS.get(current_label)
+    if next_step is None:
+        return None
+    if next_step == baseline_label:
+        return baseline_label
+    return next_step
+
+
+def extract_mood_baseline_from_diary_text(diary_text: str) -> str:
+    if not diary_text or not diary_text.strip():
+        return "平静"
+    paragraphs = [p.strip() for p in diary_text.strip().split("\n\n") if p.strip()]
+    if not paragraphs:
+        return "平静"
+    tail = paragraphs[-1]
+    if len(tail) < 10 and len(paragraphs) >= 2:
+        tail = paragraphs[-2]
+    scores = {label: 0 for label in MOOD_LABELS}
+    for label, rule in LOCAL_MOOD_KEYWORDS.items():
+        for phrase in rule.get("phrases", []):
+            if phrase in tail:
+                scores[label] += 3
+        for keyword in rule.get("keywords", []):
+            if keyword in tail:
+                scores[label] += 2
+    scored = {label: score for label, score in scores.items() if score > 0}
+    if not scored:
+        return "平静"
+    best = max(scored, key=lambda k: scored[k])
+    return best
 
 
 class MoodManager(PersonaConfigMixin):
@@ -190,6 +241,29 @@ class MoodManager(PersonaConfigMixin):
 
     def is_debug_mode(self) -> bool:
         return bool(self.config.get("debug_mode", False))
+
+    def decay_current_mood(self, current_mood: dict, baseline_label: str) -> dict | None:
+        if not current_mood or not isinstance(current_mood, dict):
+            return None
+        current_label = str(current_mood.get("label") or "").strip()
+        if not current_label:
+            return None
+        next_label = compute_mood_decay(current_label, baseline_label)
+        if next_label is None:
+            return None
+        return {
+            "label": next_label,
+            "sub_labels": [],
+            "reason": f"心情自然衰减：{current_label} → {next_label}",
+            "updated_at": datetime.datetime.now().isoformat(),
+            "source": "decay",
+        }
+
+    def get_mood_baseline(self, persona_name: str | None = None) -> str:
+        baseline = str(self._persona_value(persona_name, "mood_baseline", "") or "").strip()
+        if baseline and baseline in MOOD_LABELS:
+            return baseline
+        return "平静"
 
     def _term_uses_self_negation(self, term: str) -> bool:
         value = str(term or "").strip()
