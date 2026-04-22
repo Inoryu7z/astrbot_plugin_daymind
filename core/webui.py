@@ -1851,104 +1851,104 @@ class DayMindWebUI:
       color: var(--gold);
       border-color: rgba(212,146,58,.2);
       background: rgba(212,146,58,.06);
-      font-size: 13px;
+      font-size: 14px;
     }
 
     body.theme-journal .brand-title {
-      font-size: 30px;
+      font-size: 32px;
     }
 
     body.theme-journal .module h3 {
-      font-size: 13px;
+      font-size: 14px;
     }
 
     body.theme-journal .mini .k {
-      font-size: 13px;
+      font-size: 14px;
     }
 
     body.theme-journal .mini .v {
-      font-size: 20px;
+      font-size: 22px;
     }
 
     body.theme-journal .panel-title {
-      font-size: 24px;
+      font-size: 26px;
     }
 
     body.theme-journal .panel-sub {
-      font-size: 14px;
+      font-size: 15px;
     }
 
     body.theme-journal .entry-title {
-      font-size: 16px;
+      font-size: 17px;
     }
 
     body.theme-journal .entry-preview {
-      font-size: 14px;
+      font-size: 15px;
     }
 
     body.theme-journal .entry-date {
-      font-size: 13px;
+      font-size: 14px;
     }
 
     body.theme-journal .chip {
-      font-size: 13px;
+      font-size: 14px;
     }
 
     body.theme-journal .hero-title {
-      font-size: clamp(30px, 3vw, 44px);
+      font-size: clamp(34px, 3.5vw, 50px);
     }
 
     body.theme-journal .hero-copy {
-      font-size: 15px;
-    }
-
-    body.theme-journal .info-line {
-      font-size: 14px;
-    }
-
-    body.theme-journal .hint {
-      font-size: 13px;
-    }
-
-    body.theme-journal .status {
-      font-size: 14px;
-    }
-
-    body.theme-journal .content {
-      font-size: 18px;
-      line-height: 2;
-    }
-
-    body.theme-journal .folio-title {
-      font-size: clamp(22px, 1.8vw, 30px);
-    }
-
-    body.theme-journal .folio-tag {
-      font-size: 13px;
-    }
-
-    body.theme-journal .folio-date {
-      font-size: 14px;
-    }
-
-    body.theme-journal .folio-subtitle {
-      font-size: 13px;
-    }
-
-    body.theme-journal .meta .k {
-      font-size: 13px;
-    }
-
-    body.theme-journal .meta .v {
       font-size: 16px;
     }
 
+    body.theme-journal .info-line {
+      font-size: 15px;
+    }
+
+    body.theme-journal .hint {
+      font-size: 14px;
+    }
+
+    body.theme-journal .status {
+      font-size: 15px;
+    }
+
+    body.theme-journal .content {
+      font-size: 20px;
+      line-height: 2.1;
+    }
+
+    body.theme-journal .folio-title {
+      font-size: clamp(24px, 2vw, 34px);
+    }
+
+    body.theme-journal .folio-tag {
+      font-size: 14px;
+    }
+
+    body.theme-journal .folio-date {
+      font-size: 15px;
+    }
+
+    body.theme-journal .folio-subtitle {
+      font-size: 14px;
+    }
+
+    body.theme-journal .meta .k {
+      font-size: 14px;
+    }
+
+    body.theme-journal .meta .v {
+      font-size: 17px;
+    }
+
     body.theme-journal .pulse-time {
-      font-size: 13px;
+      font-size: 14px;
     }
 
     body.theme-journal .pulse-text {
-      font-size: 15px;
+      font-size: 16px;
     }
 
     body.theme-journal .module {
@@ -2129,55 +2129,116 @@ class DayMindWebUI:
       min-height: calc(100vh - 182px);
     }
 
-    .desk-notebook {
+    .desk-reader {
       position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%) rotate(-2deg);
-      width: 180px;
-      height: 240px;
-      border-radius: 6px 12px 12px 6px;
-      background:
-        linear-gradient(90deg, #8b4513 0%, #8b4513 4px, #f5e6c8 4px, #faf3e3 100%);
-      box-shadow:
-        4px 6px 16px rgba(80,60,30,.2),
-        inset -2px 0 4px rgba(139,69,19,.1);
-      z-index: 2;
-      cursor: pointer;
-      transition: transform .22s ease, box-shadow .22s ease;
-    }
-
-    .desk-notebook:hover {
-      transform: translate(-50%, -50%) rotate(-2deg) scale(1.04);
-      box-shadow: 6px 8px 24px rgba(80,60,30,.25);
-    }
-
-    .desk-notebook::before {
-      content: "";
-      position: absolute;
-      left: 16px;
-      top: 20px;
-      right: 12px;
-      bottom: 20px;
+      right: 24px;
+      top: 60px;
+      bottom: 60px;
+      width: min(480px, 50%);
+      border-radius: 8px;
       background:
         repeating-linear-gradient(
           to bottom,
           transparent 0,
-          transparent 22px,
-          rgba(139,109,63,.12) 22px,
-          rgba(139,109,63,.12) 23px
-        );
+          transparent 26px,
+          rgba(139,109,63,.08) 26px,
+          rgba(139,109,63,.08) 27px
+        ),
+        linear-gradient(180deg, #faf3e3, #f5e6c8);
+      box-shadow: 4px 6px 24px rgba(80,60,30,.18), inset 0 0 0 1px rgba(139,109,63,.06);
+      padding: 24px;
+      overflow-y: auto;
+      z-index: 15;
+      display: none;
+      animation: readerIn .3s cubic-bezier(.2,.8,.2,1);
     }
 
-    .desk-notebook-label {
+    .desk-reader.open { display: block; }
+
+    .desk-reader-close {
       position: absolute;
-      left: 20px;
-      top: 28px;
-      font-family: 'ZCOOL XiaoWei', 'KaiTi', serif;
-      font-size: 14px;
+      top: 12px;
+      right: 12px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid rgba(139,109,63,.12);
+      background: rgba(255,255,255,.6);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-size: 16px;
+      color: var(--muted);
+      transition: background .15s ease;
+    }
+
+    .desk-reader-close:hover { background: rgba(255,255,255,.9); }
+
+    .desk-reader-date {
+      font-family: 'Caveat', 'KaiTi', serif;
+      font-size: 22px;
       color: #5a4a3a;
-      line-height: 1.6;
-      z-index: 1;
+      margin-bottom: 4px;
+    }
+
+    .desk-reader-persona {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .desk-reader-content {
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 28px;
+      font-size: 16px;
+      font-family: 'ZCOOL XiaoWei', 'KaiTi', serif;
+      color: #3d2e1e;
+    }
+
+    .desk-reader-pulse {
+      border-radius: 8px;
+      border: 1px solid rgba(139,109,63,.1);
+      background: rgba(255,255,255,.4);
+      padding: 14px 14px 14px 18px;
+      margin-bottom: 12px;
+      position: relative;
+    }
+
+    .desk-reader-pulse::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: linear-gradient(180deg, var(--violet), var(--cyan), var(--gold));
+      border-radius: 3px 0 0 3px;
+    }
+
+    .desk-reader-pulse-time {
+      color: var(--gold);
+      font-size: 13px;
+      font-family: 'Caveat', 'KaiTi', serif;
+    }
+
+    .desk-reader-pulse-text {
+      margin-top: 6px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      font-size: 15px;
+      color: #3d2e1e;
+    }
+
+    .desk-reader-actions {
+      margin-top: 18px;
+      display: flex;
+      gap: 8px;
+    }
+
+    @keyframes readerIn {
+      0% { opacity: 0; transform: translateX(20px); }
+      100% { opacity: 1; transform: translateX(0); }
     }
 
     .sticky-note {
@@ -2402,6 +2463,63 @@ class DayMindWebUI:
       margin-left: 28px;
       font-size: 14px;
       color: var(--muted);
+    }
+
+    .nb-index-title {
+      font-family: 'Caveat', 'KaiTi', serif;
+      font-size: 24px;
+      color: #5a4a3a;
+      margin-left: 28px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid rgba(139,109,63,.12);
+    }
+
+    .nb-index {
+      margin-left: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      overflow-y: auto;
+      max-height: calc(100% - 60px);
+    }
+
+    .nb-index-item {
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .15s ease;
+      border-bottom: 1px dashed rgba(139,109,63,.08);
+    }
+
+    .nb-index-item:hover {
+      background: rgba(212,146,58,.08);
+    }
+
+    .nb-index-item.active {
+      background: rgba(212,146,58,.12);
+      border-bottom-color: transparent;
+    }
+
+    .nb-index-date {
+      font-family: 'Caveat', 'KaiTi', serif;
+      font-size: 17px;
+      color: #5a4a3a;
+    }
+
+    .nb-index-preview {
+      margin-top: 4px;
+      font-size: 13px;
+      color: var(--muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .nb-index-item.starred .nb-index-date::after {
+      content: " ★";
+      color: var(--gold);
     }
 
     .nb-meta {
@@ -2701,20 +2819,19 @@ class DayMindWebUI:
           <div class="desk-chip">窗口：<strong id="deskWindowLabel">3 天</strong></div>
           <div class="desk-chip">便利条：<strong id="deskCountLabel">0</strong></div>
         </div>
-        <div class="desk-notebook" id="deskNotebook">
-          <div class="desk-notebook-label" id="deskNotebookLabel">笔记本</div>
-        </div>
         <div id="stickyField"></div>
+        <div class="desk-reader" id="deskReader"></div>
         <button class="desk-random-btn" id="deskRandomBtn">随机翻开</button>
       </section>
 
       <section class="notebook-mode" id="notebookMode">
         <div class="notebook-spread" id="notebookSpread">
           <div class="notebook-left" id="notebookLeft">
-            <div class="nb-empty">先从桌面模式选择一张便利条，或点击随机翻开。</div>
+            <div class="nb-index-title">目录</div>
+            <div class="nb-index" id="nbIndex"></div>
           </div>
           <div class="notebook-right" id="notebookRight">
-            <div class="nb-empty">内容将在这里展开。</div>
+            <div class="nb-empty">从左侧目录选择一天，或点击随机翻开。</div>
           </div>
         </div>
       </section>
@@ -3266,7 +3383,6 @@ class DayMindWebUI:
       $('deskPersonaLabel').textContent = currentPersona() || '未选择';
       $('deskModeLabel').textContent = modeLabel(state.mode);
       $('deskWindowLabel').textContent = state.days === -1 ? '全部' : `${state.days} 天`;
-      $('deskNotebookLabel').textContent = currentPersona() || '笔记本';
       if (!items.length) {
         root.innerHTML = '';
         state.desktopBuiltFor = '';
@@ -3303,10 +3419,57 @@ class DayMindWebUI:
 
       root.querySelectorAll('.sticky-note').forEach(note => {
         note.addEventListener('click', () => {
-          openDetail(note.dataset.date, false, false, note.dataset.persona || currentPersona());
-          setView('notebook');
+          openDeskReader(note.dataset.date, note.dataset.persona || currentPersona());
         });
       });
+    }
+
+    async function openDeskReader(date, personaName = '') {
+      state.selectedDate = date;
+      if (personaName) {
+        state.selectedPersona = personaName;
+        localStorage.setItem('daymind-selected-persona', state.selectedPersona || '');
+      }
+      const reader = $('deskReader');
+      reader.innerHTML = '<div class="spinner" style="margin:40px auto"></div>';
+      reader.classList.add('open');
+
+      try {
+        if (state.mode === 'diary') {
+          const data = await api(`/api/diaries/${date}?persona_name=${encodeURIComponent(personaName || currentPersona())}`);
+          state.activeDetail = data;
+          const d = data;
+          reader.innerHTML = `
+            <button class="desk-reader-close" id="deskReaderClose">✕</button>
+            <div class="desk-reader-date">${esc(d.date)}</div>
+            <div class="desk-reader-persona">${esc(d.persona_name || personaName || '未知人格')} · 日记</div>
+            <div class="desk-reader-content">${esc(d.content || '（空）')}</div>
+            <div class="desk-reader-actions">
+              <button id="deskStarBtn" class="${d.starred ? 'active' : 'btn-soft'}">${d.starred ? '★ 已星标' : '☆ 添加星标'}</button>
+            </div>`;
+        } else {
+          const data = await api(`/api/reflections/${date}?persona_name=${encodeURIComponent(personaName || currentPersona())}`);
+          state.activeDetail = data;
+          const d = data;
+          reader.innerHTML = `
+            <button class="desk-reader-close" id="deskReaderClose">✕</button>
+            <div class="desk-reader-date">${esc(d.date)}</div>
+            <div class="desk-reader-persona">${esc(d.persona_name || personaName || '未知人格')} · 思考脉冲</div>
+            ${(d.items || []).map(item => `
+              <div class="desk-reader-pulse">
+                <div class="desk-reader-pulse-time">${esc(item.time || '')}</div>
+                <div class="desk-reader-pulse-text">${esc(item.content || '')}</div>
+              </div>`).join('')}
+            <div class="desk-reader-actions">
+              <button id="deskStarBtn" class="${d.starred ? 'active' : 'btn-soft'}">${d.starred ? '★ 已星标' : '☆ 添加星标'}</button>
+            </div>`;
+        }
+        $('deskReaderClose')?.addEventListener('click', () => reader.classList.remove('open'));
+        $('deskStarBtn')?.addEventListener('click', toggleStarred);
+      } catch (e) {
+        reader.innerHTML = `<button class="desk-reader-close" id="deskReaderClose">✕</button><div class="nb-empty">加载失败：${esc(e.message)}</div>`;
+        $('deskReaderClose')?.addEventListener('click', () => reader.classList.remove('open'));
+      }
     }
 
     async function loadConfig() {
@@ -3336,6 +3499,7 @@ class DayMindWebUI:
       buildGalaxyIfNeeded(true);
       buildDesktopIfNeeded(true);
       renderSidePanel();
+      if (state.theme === 'journal') renderNotebookContent();
 
       if (selected) {
         const exists = getCurrentCollection().some(x => x.date === selected && (!currentPersona() || (x.persona_name || '') === currentPersona()));
@@ -3491,39 +3655,51 @@ class DayMindWebUI:
     }
 
     function renderNotebookContent() {
+      const items = currentItems();
+      const index = $('nbIndex');
+      if (!index) return;
+
+      index.innerHTML = items.length ? items.map(item => `
+        <div class="nb-index-item ${item.starred ? 'starred' : ''} ${state.selectedDate === item.date ? 'active' : ''}" data-date="${item.date}" data-persona="${esc(item.persona_name || currentPersona() || '')}">
+          <div class="nb-index-date">${esc(item.date)}</div>
+          <div class="nb-index-preview">${esc(item.persona_name || '未知人格')} · ${state.mode === 'diary' ? (item.length + ' 字') : (item.count + ' 条')}${item.starred ? ' · ★' : ''}</div>
+        </div>`).join('') : '<div class="nb-empty">没有可展示的记录。</div>';
+
+      index.querySelectorAll('.nb-index-item').forEach(el => {
+        el.addEventListener('click', () => {
+          openDetail(el.dataset.date, false, false, el.dataset.persona || currentPersona());
+        });
+      });
+
       const d = state.activeDetail;
       if (!d) {
-        $('notebookLeft').innerHTML = '<div class="nb-empty">先从桌面模式选择一张便利条，或点击随机翻开。</div>';
-        $('notebookRight').innerHTML = '<div class="nb-empty">内容将在这里展开。</div>';
+        $('notebookRight').innerHTML = '<div class="nb-empty">从左侧目录选择一天，或点击随机翻开。</div>';
         return;
       }
       const isDiary = state.mode === 'diary';
-      $('notebookLeft').innerHTML = `
-        <div class="nb-date">${esc(d.date)}</div>
-        <div class="nb-persona">${esc(d.persona_name || currentPersona() || '未知人格')} · ${isDiary ? '日记档案' : '思考脉冲'}</div>
-        <div class="nb-meta">
-          <div class="nb-meta-item"><span>类型</span><strong>${isDiary ? 'Diary' : 'Pulse'}</strong></div>
-          <div class="nb-meta-item"><span>日期</span><strong>${esc(d.date)}</strong></div>
-          ${isDiary ? `<div class="nb-meta-item"><span>更新</span><strong>${fmt(d.updated_at)}</strong></div>` : `<div class="nb-meta-item"><span>记录数</span><strong>${d.count} 条</strong></div>`}
-          <div class="nb-meta-item"><span>星标</span><strong>${d.starred ? '★ 已星标' : '☆ 未星标'}</strong></div>
-        </div>
-        <div class="nb-actions">
-          <button id="nbToggleStar" class="${d.starred ? 'active' : 'btn-soft'}">${d.starred ? '★ 已星标' : '☆ 添加星标'}</button>
-          <button id="nbBackDesktop" class="btn-soft">返回桌面</button>
-        </div>`;
-      $('nbToggleStar')?.addEventListener('click', toggleStarred);
-      $('nbBackDesktop')?.addEventListener('click', () => setView('desktop'));
-
       if (isDiary) {
-        $('notebookRight').innerHTML = `<div class="nb-content">${esc(d.content || '（空）')}</div>`;
+        $('notebookRight').innerHTML = `
+          <div class="nb-date">${esc(d.date)}</div>
+          <div class="nb-persona">${esc(d.persona_name || currentPersona() || '未知人格')} · 日记</div>
+          <div class="nb-content">${esc(d.content || '（空）')}</div>
+          <div class="nb-actions">
+            <button id="nbToggleStar" class="${d.starred ? 'active' : 'btn-soft'}">${d.starred ? '★ 已星标' : '☆ 添加星标'}</button>
+          </div>`;
       } else {
-        $('notebookRight').innerHTML = (d.items || []).map((item, idx) => `
-          <div class="nb-pulse" style="animation-delay:${idx * 20}ms">
-            <div class="nb-pulse-time">${esc(item.time || '')}</div>
-            <div class="nb-pulse-text">${esc(item.content || '')}</div>
-          </div>
-        `).join('') || '<div class="nb-empty">这一天没有可展示的思考脉冲。</div>';
+        $('notebookRight').innerHTML = `
+          <div class="nb-date">${esc(d.date)}</div>
+          <div class="nb-persona">${esc(d.persona_name || currentPersona() || '未知人格')} · 思考脉冲</div>
+          ${(d.items || []).map((item, idx) => `
+            <div class="nb-pulse" style="animation-delay:${idx * 20}ms">
+              <div class="nb-pulse-time">${esc(item.time || '')}</div>
+              <div class="nb-pulse-text">${esc(item.content || '')}</div>
+            </div>
+          `).join('')}
+          <div class="nb-actions">
+            <button id="nbToggleStar" class="${d.starred ? 'active' : 'btn-soft'}">${d.starred ? '★ 已星标' : '☆ 添加星标'}</button>
+          </div>`;
       }
+      $('nbToggleStar')?.addEventListener('click', toggleStarred);
     }
 
     async function enterFromStar(planet = null) {
@@ -3574,8 +3750,11 @@ class DayMindWebUI:
       const items = currentItems();
       if (!items.length) return;
       const chosen = pick(items);
-      await openDetail(chosen.date, false, false, chosen.persona_name || currentPersona());
-      setView('notebook');
+      if (state.view === 'desktop') {
+        openDeskReader(chosen.date, chosen.persona_name || currentPersona());
+      } else {
+        await openDetail(chosen.date, false, false, chosen.persona_name || currentPersona());
+      }
     });
     $('searchInput').addEventListener('input', renderList);
     $('starredOnlyBtn').addEventListener('click', async () => {
