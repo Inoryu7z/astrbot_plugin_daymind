@@ -1851,6 +1851,104 @@ class DayMindWebUI:
       color: var(--gold);
       border-color: rgba(212,146,58,.2);
       background: rgba(212,146,58,.06);
+      font-size: 13px;
+    }
+
+    body.theme-journal .brand-title {
+      font-size: 30px;
+    }
+
+    body.theme-journal .module h3 {
+      font-size: 13px;
+    }
+
+    body.theme-journal .mini .k {
+      font-size: 13px;
+    }
+
+    body.theme-journal .mini .v {
+      font-size: 20px;
+    }
+
+    body.theme-journal .panel-title {
+      font-size: 24px;
+    }
+
+    body.theme-journal .panel-sub {
+      font-size: 14px;
+    }
+
+    body.theme-journal .entry-title {
+      font-size: 16px;
+    }
+
+    body.theme-journal .entry-preview {
+      font-size: 14px;
+    }
+
+    body.theme-journal .entry-date {
+      font-size: 13px;
+    }
+
+    body.theme-journal .chip {
+      font-size: 13px;
+    }
+
+    body.theme-journal .hero-title {
+      font-size: clamp(30px, 3vw, 44px);
+    }
+
+    body.theme-journal .hero-copy {
+      font-size: 15px;
+    }
+
+    body.theme-journal .info-line {
+      font-size: 14px;
+    }
+
+    body.theme-journal .hint {
+      font-size: 13px;
+    }
+
+    body.theme-journal .status {
+      font-size: 14px;
+    }
+
+    body.theme-journal .content {
+      font-size: 18px;
+      line-height: 2;
+    }
+
+    body.theme-journal .folio-title {
+      font-size: clamp(22px, 1.8vw, 30px);
+    }
+
+    body.theme-journal .folio-tag {
+      font-size: 13px;
+    }
+
+    body.theme-journal .folio-date {
+      font-size: 14px;
+    }
+
+    body.theme-journal .folio-subtitle {
+      font-size: 13px;
+    }
+
+    body.theme-journal .meta .k {
+      font-size: 13px;
+    }
+
+    body.theme-journal .meta .v {
+      font-size: 16px;
+    }
+
+    body.theme-journal .pulse-time {
+      font-size: 13px;
+    }
+
+    body.theme-journal .pulse-text {
+      font-size: 15px;
     }
 
     body.theme-journal .module {
@@ -2084,9 +2182,9 @@ class DayMindWebUI:
 
     .sticky-note {
       position: absolute;
-      width: var(--note-w, 140px);
-      min-height: var(--note-h, 120px);
-      padding: 14px 12px 10px;
+      width: var(--note-w, 160px);
+      min-height: var(--note-h, 140px);
+      padding: 16px 14px 12px;
       border-radius: 2px;
       cursor: pointer;
       transition: transform .2s ease, box-shadow .2s ease, z-index 0s;
@@ -2136,7 +2234,7 @@ class DayMindWebUI:
     }
 
     .sticky-note-date {
-      font-size: 11px;
+      font-size: 13px;
       color: rgba(80,60,30,.5);
       font-family: 'Caveat', 'KaiTi', serif;
       letter-spacing: .04em;
@@ -2144,7 +2242,7 @@ class DayMindWebUI:
 
     .sticky-note-title {
       margin-top: 6px;
-      font-size: 13px;
+      font-size: 15px;
       font-weight: 600;
       color: #3d2e1e;
       line-height: 1.4;
@@ -2156,7 +2254,7 @@ class DayMindWebUI:
 
     .sticky-note-preview {
       margin-top: 6px;
-      font-size: 11px;
+      font-size: 13px;
       color: rgba(61,46,30,.6);
       line-height: 1.5;
       display: -webkit-box;
@@ -2170,7 +2268,7 @@ class DayMindWebUI:
       margin-top: 6px;
       padding: 2px 8px;
       border-radius: 999px;
-      font-size: 10px;
+      font-size: 12px;
       background: rgba(255,255,255,.5);
       color: rgba(61,46,30,.5);
     }
@@ -2373,7 +2471,7 @@ class DayMindWebUI:
 
     .nb-pulse-time {
       color: var(--gold);
-      font-size: 11px;
+      font-size: 13px;
       font-family: 'Caveat', 'KaiTi', serif;
       letter-spacing: .04em;
     }
@@ -2383,7 +2481,7 @@ class DayMindWebUI:
       margin-left: 4px;
       line-height: 1.8;
       white-space: pre-wrap;
-      font-size: 13px;
+      font-size: 15px;
       color: #3d2e1e;
     }
 
@@ -2406,25 +2504,26 @@ class DayMindWebUI:
     }
 
     body.theme-journal .hero-visual {
-      border-color: rgba(139,109,63,.1);
-      background:
-        radial-gradient(circle at center, rgba(212,146,58,.1), transparent 34%),
-        radial-gradient(circle at center, rgba(90,158,124,.08), transparent 54%),
-        linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,.1));
+      display: none;
     }
 
-    body.theme-journal .hero-visual::before {
-      border-color: rgba(139,109,63,.12);
-      border-style: dashed;
+    body.theme-journal .hero {
+      grid-template-columns: 1fr;
+      min-height: 140px;
     }
 
-    body.theme-journal .hero-visual::after {
-      border-color: rgba(212,146,58,.15);
+    body.theme-journal #overviewMode,
+    body.theme-journal #starMode {
+      display: none !important;
     }
 
-    body.theme-journal .hero-dot.a { color: var(--gold); background: var(--gold); }
-    body.theme-journal .hero-dot.b { color: var(--violet); background: var(--violet); }
-    body.theme-journal .hero-dot.c { color: var(--cyan); background: var(--cyan); }
+    body.theme-journal .side-stack {
+      display: none !important;
+    }
+
+    body.theme-journal .workspace {
+      grid-template-columns: 1fr;
+    }
 
     body.theme-journal .folio {
       border-color: rgba(139,109,63,.1);
@@ -2788,6 +2887,7 @@ class DayMindWebUI:
     function setView(view) {
       state.view = view;
       localStorage.setItem('daymind-view-mode', view);
+      const isJournal = state.theme === 'journal';
       document.body.classList.toggle('star-view', view === 'star');
       document.body.classList.toggle('desktop-view', view === 'desktop');
       $('overviewMode').classList.toggle('hidden', view !== 'overview');
@@ -2795,7 +2895,6 @@ class DayMindWebUI:
       $('desktopMode').classList.toggle('active', view === 'desktop');
       $('notebookMode').classList.toggle('active', view === 'notebook');
       updateModeButtons();
-      const isJournal = state.theme === 'journal';
       if (isJournal) {
         $('heroBadge').textContent = view === 'notebook' ? 'Notebook' : 'Desktop';
         $('heroTitle').textContent = view === 'notebook' ? '笔记本' : '桌面';
@@ -2842,6 +2941,8 @@ class DayMindWebUI:
       document.body.classList.toggle('theme-journal', theme === 'journal');
       $('themeGalaxy').classList.toggle('active', theme === 'galaxy');
       $('themeJournal').classList.toggle('active', theme === 'journal');
+      const brandTitle = document.querySelector('.brand-title');
+      if (brandTitle) brandTitle.textContent = theme === 'journal' ? '笔记本与桌面' : '观测与星图';
       if (theme === 'journal') {
         setView(state.view === 'overview' ? 'notebook' : 'desktop');
       } else {
@@ -2949,7 +3050,11 @@ class DayMindWebUI:
     }
 
     function renderEmpty() {
-      $('detailPanel').innerHTML = `<div class="empty">${state.mode === 'diary' ? '先从左侧选择一天，或切到星图模式随机进入。' : '先从左侧选择一天，或切到星图模式随机进入某天思考。'}</div>`;
+      const isJournal = state.theme === 'journal';
+      const hint = isJournal
+        ? (state.mode === 'diary' ? '先从桌面选择一张便利条，或点击随机翻开。' : '先从桌面选择一张便利条，或点击随机翻开某天思考。')
+        : (state.mode === 'diary' ? '先从左侧选择一天，或切到星图模式随机进入。' : '先从左侧选择一天，或切到星图模式随机进入某天思考。');
+      $('detailPanel').innerHTML = `<div class="empty">${hint}</div>`;
     }
 
     function renderSidePanel() {
@@ -3015,8 +3120,10 @@ class DayMindWebUI:
             <div class="field">
               <label class="hint">默认进入模式</label>
               <select id="cfgMode">
-                <option value="overview" ${(cfg.webui_default_mode || status.webui_default_mode) === 'overview' ? 'selected' : ''}>overview</option>
-                <option value="star" ${(cfg.webui_default_mode || status.webui_default_mode) === 'star' ? 'selected' : ''}>star</option>
+                <option value="overview" ${(cfg.webui_default_mode || status.webui_default_mode) === 'overview' ? 'selected' : ''}>overview（观测）</option>
+                <option value="star" ${(cfg.webui_default_mode || status.webui_default_mode) === 'star' ? 'selected' : ''}>star（星图）</option>
+                <option value="notebook" ${(cfg.webui_default_mode || status.webui_default_mode) === 'notebook' ? 'selected' : ''}>notebook（笔记本）</option>
+                <option value="desktop" ${(cfg.webui_default_mode || status.webui_default_mode) === 'desktop' ? 'selected' : ''}>desktop（桌面）</option>
               </select>
             </div>
             <button id="saveConfigBtn" class="btn-block">保存设置</button>
@@ -3172,15 +3279,15 @@ class DayMindWebUI:
       const positions = [];
       const stageW = root.parentElement?.offsetWidth || 800;
       const stageH = root.parentElement?.offsetHeight || 600;
-      const noteW = 140;
-      const noteH = 120;
+      const noteW = 160;
+      const noteH = 140;
 
       root.innerHTML = items.map((item, i) => {
-        const cols = Math.max(3, Math.floor(stageW / 170));
+        const cols = Math.max(3, Math.floor(stageW / 190));
         const row = Math.floor(i / cols);
         const col = i % cols;
-        const baseX = 40 + col * 170 + (row % 2 === 0 ? 0 : 30);
-        const baseY = 80 + row * 150;
+        const baseX = 40 + col * 190 + (row % 2 === 0 ? 0 : 30);
+        const baseY = 80 + row * 170;
         const rotation = (Math.sin(i * 2.7) * 6).toFixed(1);
         const tapeX = (30 + (i * 17) % 40) + '%';
         const tapeAngle = ((Math.sin(i * 3.1) * 4) - 2).toFixed(1) + 'deg';
