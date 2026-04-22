@@ -5,8 +5,6 @@ DayMind WebUI
 """
 
 import asyncio
-import hmac
-import json
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -106,7 +104,7 @@ class DayMindWebUI:
     def _is_authorized(self, provided_password: str | None) -> bool:
         expected = str(self.password or "daymind")
         provided = str(provided_password or "")
-        return bool(provided) and hmac.compare_digest(provided, expected)
+        return bool(provided) and provided == expected
 
     def _raise_unauthorized(self):
         raise HTTPException(status_code=401, detail="未授权：WebUI 密码错误或未提供")
@@ -399,6 +397,7 @@ class DayMindWebUI:
                 if not self._date_in_window(date_str, window_days):
                     continue
                 try:
+                    import json
                     rows = json.loads(fp.read_text(encoding="utf-8"))
                     if not isinstance(rows, list):
                         rows = []
@@ -427,6 +426,7 @@ class DayMindWebUI:
             fp = self._reflections_dir() / normalized_persona / f"{date_str}.json"
             if not fp.exists():
                 return None
+            import json
             rows = json.loads(fp.read_text(encoding="utf-8"))
             if not isinstance(rows, list):
                 rows = []
@@ -442,6 +442,7 @@ class DayMindWebUI:
             fp = persona_dir / f"{date_str}.json"
             if not fp.exists():
                 continue
+            import json
             rows = json.loads(fp.read_text(encoding="utf-8"))
             if not isinstance(rows, list):
                 rows = []
@@ -461,6 +462,7 @@ class DayMindWebUI:
             if not meta_file.exists():
                 return "unknown"
             try:
+                import json
                 data = json.loads(meta_file.read_text(encoding="utf-8"))
                 status = str(data.get("memory_status") or "unknown").strip() or "unknown"
                 return status
@@ -840,12 +842,15 @@ class DayMindWebUI:
     .searchbar input { padding-left: 44px; }
 
     .searchbar::before {
-      content: "⌕";
+      content: "";
       position: absolute;
-      left: 16px;
-      top: 9px;
-      color: var(--muted);
-      font-size: 18px;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2395a2c6' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") no-repeat center;
+      pointer-events: none;
     }
 
     .filter-row {
@@ -1484,11 +1489,324 @@ class DayMindWebUI:
       body.star-view .star-mode,
       body.star-view .star-stage { min-height: 560px; }
     }
+
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .toast {
+      pointer-events: auto;
+      padding: 14px 20px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.1);
+      background: linear-gradient(180deg, rgba(14,20,35,.94), rgba(9,13,24,.9));
+      backdrop-filter: blur(20px) saturate(120%);
+      -webkit-backdrop-filter: blur(20px) saturate(120%);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.6;
+      box-shadow: 0 16px 48px rgba(0,0,0,.4);
+      animation: toastIn .36s cubic-bezier(.2,.8,.2,1);
+      max-width: 340px;
+    }
+
+    .toast.ok { border-color: rgba(143,224,174,.2); }
+    .toast.ok::before {
+      content: "";
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--ok);
+      margin-right: 10px;
+      vertical-align: middle;
+      box-shadow: 0 0 8px rgba(143,224,174,.4);
+    }
+
+    .toast.err { border-color: rgba(255,154,154,.2); }
+    .toast.err::before {
+      content: "";
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+      margin-right: 10px;
+      vertical-align: middle;
+      box-shadow: 0 0 8px rgba(255,154,154,.4);
+    }
+
+    .toast.leaving {
+      animation: toastOut .28s cubic-bezier(.4,0,1,1) forwards;
+    }
+
+    @keyframes toastIn {
+      0% { opacity: 0; transform: translateY(16px) scale(.96); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes toastOut {
+      0% { opacity: 1; transform: translateY(0) scale(1); }
+      100% { opacity: 0; transform: translateY(-8px) scale(.96); }
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(4,6,14,.72);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: grid;
+      place-items: center;
+      animation: fadeIn .22s ease;
+    }
+
+    .modal-overlay.leaving {
+      animation: fadeOut .18s ease forwards;
+    }
+
+    .modal-card {
+      width: min(420px, 90vw);
+      border-radius: var(--r-xl);
+      border: 1px solid rgba(255,255,255,.1);
+      background: linear-gradient(180deg, rgba(14,20,35,.96), rgba(9,13,24,.94));
+      backdrop-filter: blur(24px) saturate(120%);
+      -webkit-backdrop-filter: blur(24px) saturate(120%);
+      box-shadow: 0 32px 96px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04) inset;
+      padding: 28px;
+      animation: modalIn .32s cubic-bezier(.2,.8,.2,1);
+    }
+
+    .modal-overlay.leaving .modal-card {
+      animation: modalOut .18s ease forwards;
+    }
+
+    .modal-title {
+      font-family: var(--display);
+      font-size: 24px;
+      line-height: 1.2;
+      margin: 0;
+    }
+
+    .modal-desc {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .modal-field {
+      margin-top: 18px;
+    }
+
+    .modal-field input {
+      width: 100%;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.1);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      padding: 14px 16px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+
+    .modal-field input:focus {
+      border-color: rgba(143,216,255,.36);
+      box-shadow: 0 0 0 3px rgba(143,216,255,.1);
+    }
+
+    .modal-actions {
+      margin-top: 20px;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .modal-actions button {
+      min-width: 88px;
+      justify-content: center;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes fadeOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+
+    @keyframes modalIn {
+      0% { opacity: 0; transform: translateY(20px) scale(.96); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes modalOut {
+      0% { opacity: 1; transform: translateY(0) scale(1); }
+      100% { opacity: 0; transform: translateY(10px) scale(.98); }
+    }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 8;
+      display: grid;
+      place-items: center;
+      background: rgba(7,10,19,.6);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      border-radius: inherit;
+      animation: fadeIn .2s ease;
+    }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,.1);
+      border-top-color: var(--cyan);
+      animation: spinLoader .8s linear infinite;
+    }
+
+    @keyframes spinLoader {
+      to { transform: rotate(360deg); }
+    }
+
+    .sidebar-toggle {
+      display: none;
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      z-index: 100;
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.1);
+      background: linear-gradient(180deg, rgba(14,20,35,.92), rgba(9,13,24,.88));
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      color: var(--text);
+      cursor: pointer;
+      place-items: center;
+      box-shadow: 0 8px 24px rgba(0,0,0,.3);
+      transition: transform .18s ease;
+    }
+
+    .sidebar-toggle:hover { transform: scale(1.06); }
+
+    .sidebar-toggle svg {
+      width: 20px;
+      height: 20px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+    }
+
+    @media (max-width: 1380px) {
+      .sidebar-toggle { display: grid; }
+      .sidebar {
+        position: fixed;
+        left: 0; top: 0; bottom: 0;
+        z-index: 99;
+        border-radius: 0 var(--r-xl) var(--r-xl) 0;
+        transform: translateX(-110%);
+        transition: transform .32s cubic-bezier(.2,.8,.2,1);
+        overflow-y: auto;
+        max-height: 100vh;
+        width: 290px;
+      }
+      .sidebar.open {
+        transform: translateX(0);
+      }
+      .sidebar-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 98;
+        background: rgba(4,6,14,.5);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .28s ease;
+      }
+      .sidebar-backdrop.active {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .app {
+        grid-template-columns: 1fr;
+        padding-top: 68px;
+      }
+    }
+
+    .mode-transition {
+      animation: modeFadeIn .38s cubic-bezier(.2,.8,.2,1);
+    }
+
+    @keyframes modeFadeIn {
+      0% { opacity: 0; transform: translateY(8px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    .hero-dot.a { animation: floatA 6s ease-in-out infinite; }
+    .hero-dot.b { animation: floatB 7.2s ease-in-out infinite; }
+    .hero-dot.c { animation: floatC 5.4s ease-in-out infinite; }
+
+    @keyframes floatA {
+      0%, 100% { transform: translate(0, 0); }
+      33% { transform: translate(6px, -8px); }
+      66% { transform: translate(-4px, 4px); }
+    }
+
+    @keyframes floatB {
+      0%, 100% { transform: translate(0, 0); }
+      33% { transform: translate(-5px, 6px); }
+      66% { transform: translate(7px, -3px); }
+    }
+
+    @keyframes floatC {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(4px, -6px); }
+    }
+
+    button:focus-visible,
+    select:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid rgba(143,216,255,.5);
+      outline-offset: 2px;
+    }
+
+    .stream-list,
+    .reader-stage {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,.12) transparent;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
   </style>
 </head>
 <body>
+  <div class="toast-container" id="toastContainer"></div>
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+  <button class="sidebar-toggle" id="sidebarToggle" aria-label="打开侧边栏">
+    <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
   <div class="app">
-    <aside class="sidebar glass">
+    <aside class="sidebar glass" id="sidebar">
       <div class="eyebrow">DayMind · WebUI</div>
       <div class="brand-title">观测与星图</div>
 
@@ -1661,12 +1979,48 @@ class DayMindWebUI:
     async function ensurePassword(force = false) {
       if (!force && state.password) return state.password;
       const preset = force ? '' : (state.password || getSavedPassword() || 'daymind');
-      const input = window.prompt('请输入 DayMind WebUI 密码。默认密码为 daymind，建议尽快修改。', preset);
-      if (input === null) throw new Error('未提供 WebUI 密码');
-      const password = String(input || '').trim();
-      if (!password) throw new Error('WebUI 密码不能为空');
-      savePassword(password);
-      return password;
+      return new Promise((resolve, reject) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+          <div class="modal-card">
+            <h2 class="modal-title">身份验证</h2>
+            <p class="modal-desc">请输入 DayMind WebUI 密码以继续访问。默认密码为 daymind，建议尽快修改。</p>
+            <div class="modal-field">
+              <input type="password" id="modalPasswordInput" value="${esc(preset)}" placeholder="输入密码…" autofocus />
+            </div>
+            <div class="modal-actions">
+              <button id="modalCancelBtn" class="btn-soft">取消</button>
+              <button id="modalConfirmBtn" class="active">确认</button>
+            </div>
+          </div>`;
+        document.body.appendChild(overlay);
+        const input = overlay.querySelector('#modalPasswordInput');
+        const confirmBtn = overlay.querySelector('#modalConfirmBtn');
+        const cancelBtn = overlay.querySelector('#modalCancelBtn');
+        setTimeout(() => input.focus(), 80);
+        const close = (result) => {
+          overlay.classList.add('leaving');
+          overlay.addEventListener('animationend', () => overlay.remove());
+          if (result) {
+            savePassword(result);
+            resolve(result);
+          } else {
+            reject(new Error('未提供 WebUI 密码'));
+          }
+        };
+        confirmBtn.addEventListener('click', () => {
+          const val = String(input.value || '').trim();
+          if (!val) { input.style.borderColor = 'rgba(255,154,154,.5)'; return; }
+          close(val);
+        });
+        cancelBtn.addEventListener('click', () => close(null));
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') confirmBtn.click();
+          if (e.key === 'Escape') cancelBtn.click();
+        });
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) cancelBtn.click(); });
+      });
     }
 
     async function api(url, options = {}) {
@@ -1708,7 +2062,15 @@ class DayMindWebUI:
     }
 
     function setToast(msg, kind = 'ok') {
-      $('summaryDiary').textContent = msg.length > 6 ? msg.slice(0, 6) + '…' : msg;
+      const container = $('toastContainer');
+      const el = document.createElement('div');
+      el.className = `toast ${kind}`;
+      el.textContent = msg;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.classList.add('leaving');
+        el.addEventListener('animationend', () => el.remove());
+      }, 2400);
     }
 
     function setView(view) {
@@ -1724,6 +2086,10 @@ class DayMindWebUI:
       $('heroQuote').textContent = view === 'overview'
         ? '把散落的记录放回时间里。'
         : '从轨道中随机坠入。';
+      const target = view === 'overview' ? $('overviewMode') : $('starMode');
+      target.classList.remove('mode-transition');
+      void target.offsetWidth;
+      target.classList.add('mode-transition');
     }
 
     function setMode(mode) {
@@ -2116,6 +2482,19 @@ class DayMindWebUI:
       await loadStreams(true);
     }
 
+    function showLoading(panel) {
+      const el = document.createElement('div');
+      el.className = 'loading-overlay';
+      el.innerHTML = '<div class="spinner"></div>';
+      panel.style.position = 'relative';
+      panel.appendChild(el);
+      return el;
+    }
+
+    function hideLoading(el) {
+      if (el && el.parentNode) el.remove();
+    }
+
     async function openDetail(date, fromStar = false, silentRefresh = false, personaName = '') {
       state.selectedDate = date;
       if (personaName) {
@@ -2124,6 +2503,10 @@ class DayMindWebUI:
       }
       renderList();
 
+      const detailPanel = $('detailPanel');
+      const loader = showLoading(detailPanel);
+
+      try {
       if (state.mode === 'diary') {
         const res = await api(appendPersona(`/api/diaries/${date}`));
         const d = res.data;
@@ -2177,6 +2560,9 @@ class DayMindWebUI:
 
       if (fromStar && !silentRefresh) {
         document.querySelector('.hero, .workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      } finally {
+        hideLoading(loader);
       }
     }
 
@@ -2234,6 +2620,18 @@ class DayMindWebUI:
       renderSidePanel();
     });
     document.querySelectorAll('[data-days]').forEach(btn => btn.addEventListener('click', () => setDays(btn.dataset.days)));
+
+    function toggleSidebar(open) {
+      const sidebar = $('sidebar');
+      const backdrop = $('sidebarBackdrop');
+      const isOpen = sidebar.classList.contains('open');
+      const shouldOpen = typeof open === 'boolean' ? open : !isOpen;
+      sidebar.classList.toggle('open', shouldOpen);
+      backdrop.classList.toggle('active', shouldOpen);
+    }
+
+    $('sidebarToggle').addEventListener('click', () => toggleSidebar());
+    $('sidebarBackdrop').addEventListener('click', () => toggleSidebar(false));
 
     init().catch(err => {
       console.error(err);
