@@ -1616,6 +1616,33 @@ class AwarenessScheduler(PersonaConfigMixin):
         dream_state = state.get("dream_state", {})
         return dream_state.get("dream_aftereffect")
 
+    def get_dream_aftereffect_for_persona(self, persona_name: str | None) -> dict | None:
+        normalized = self._canonical_persona_name(persona_name)
+        if not normalized:
+            return None
+        state = self.persona_states.get(normalized)
+        if not state:
+            return None
+        dream_state = state.get("dream_state", {})
+        return dream_state.get("dream_aftereffect")
+
+    def get_dream_history(self, persona_name: str | None, date: str | None = None) -> list[dict]:
+        canonical_persona = self._canonical_persona_name(persona_name)
+        if not canonical_persona:
+            return []
+        if not date:
+            date = datetime.date.today().isoformat()
+        try:
+            dream_dir = Path(self.data_dir) / "dreams" / self._sanitize_persona_path(canonical_persona)
+            dream_file = dream_dir / f"{date}.json"
+            items = self._load_json_file(dream_file, [])
+            if isinstance(items, list):
+                return items
+            return []
+        except Exception as e:
+            logger.debug(f"[Scheduler] 读取梦境历史失败: {e}")
+            return []
+
     async def _append_dream_history(self, date_str: str, persona_name: str, content: str):
         try:
             canonical_persona = self._canonical_persona_name(persona_name) or persona_name
