@@ -575,6 +575,14 @@ class MoodManager(PersonaConfigMixin):
 
         label = mood.get("label", "平静")
         reason = mood.get("reason", "")
+        source = mood.get("source", "")
+
+        if source == "dream":
+            dream_text = f"你隐约感到一种{label}的余韵，像是某个梦境残留的感觉。回复时几乎不需要体现，它只是背景里若有若无的一丝情绪。"
+            if reason:
+                dream_text += f" {reason}"
+            return dream_text
+
         sub_labels = self._normalize_sub_labels(label, mood.get("sub_labels", []))
         transition_text = self._build_transition_text(mood, previous_mood)
 
@@ -621,6 +629,10 @@ class MoodManager(PersonaConfigMixin):
         style_text = self.get_mood_style_text(mood, previous_mood=previous_mood, persona_name=persona_name)
         if not style_text:
             return ""
+
+        source = mood.get("source", "")
+        if source == "dream":
+            return f"\n\n### 梦境余韵\n{style_text}"
 
         return f"\n\n### 当前心情状态\n{style_text}"
 

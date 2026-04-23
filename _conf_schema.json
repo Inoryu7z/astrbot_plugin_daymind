@@ -204,6 +204,25 @@
             "default": false,
             "hint": "开启后，自动从 DayFlow 日程的睡眠时段提取静默结束时间（即日程中第一个时段的结束时间），无需手动配置。若日程尚未生成或提取失败，则回退到上方手动配置的静默结束时间。需安装 DayFlow 日程插件。"
           },
+          "enable_dream": {
+            "type": "bool",
+            "description": "启用梦境",
+            "default": true,
+            "hint": "开启后，在静默（睡眠）时段会生成梦境片段。梦境基于入睡前心情和对话余温生成，醒来后可能影响心情并作为记忆注入。"
+          },
+          "dream_count_range": {
+            "type": "string",
+            "description": "每夜梦境数量范围",
+            "default": "1-2",
+            "hint": "每晚生成的梦境数量范围，格式如\"1-2\"表示随机1到2个。入睡后15分钟生成第一个梦，后续梦境间隔至少30分钟。"
+          },
+          "dream_provider_id": {
+            "type": "string",
+            "description": "梦境模型提供商",
+            "default": "",
+            "_special": "select_provider",
+            "hint": "用于生成梦境的模型提供商；留空则复用思考模型提供商。梦境对模型能力要求不高，可用较便宜的模型。"
+          },
           "show_advanced": {
             "type": "bool",
             "description": "显示高级设置",
