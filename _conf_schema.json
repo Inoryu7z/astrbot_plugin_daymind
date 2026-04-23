@@ -78,23 +78,18 @@
             "default": true,
             "hint": "开启后，该人格会在设定时间自动生成日记。要正常运行，还需配置下方“日记模型提供商”。"
           },
+          "thinking_provider_id": {
+            "type": "string",
+            "description": "思考模型提供商",
+            "default": "",
+            "hint": "用于生成自动思考。留空则该人格无法执行自动/手动思考。建议先选择一个稳定可用的模型提供商。",
+            "_special": "select_provider"
+          },
           "thinking_interval_minutes": {
             "type": "int",
             "description": "思考间隔（分钟）",
             "default": 30,
             "hint": "自动思考开启时，每隔多少分钟触发一轮周期性思考。默认 30 分钟，通常无需修改。"
-          },
-          "thinking_interval_jitter_seconds": {
-            "type": "int",
-            "description": "思考抖动秒数",
-            "default": 0,
-            "hint": "每轮调度都会在 ±该秒数范围内加入随机抖动，用于错开并发峰值。单人格或普通使用场景填 0 即可。"
-          },
-          "context_rounds": {
-            "type": "int",
-            "description": "参考对话轮数",
-            "default": 2,
-            "hint": "自动思考时参考最近多少轮对话上下文。默认 2 轮，通常已够用。"
           },
           "thinking_mode": {
             "type": "string",
@@ -107,60 +102,18 @@
             ],
             "hint": "控制自动思考的长度与颗粒度。默认“适量”最均衡。"
           },
-          "thinking_provider_id": {
-            "type": "string",
-            "description": "思考模型提供商",
-            "default": "",
-            "hint": "用于生成自动思考。留空则该人格无法执行自动/手动思考。建议先选择一个稳定可用的模型提供商。",
-            "_special": "select_provider"
-          },
-          "reflection_auto_ensure_today_schedule": {
-            "type": "bool",
-            "description": "思考前确保今日日程存在",
-            "default": true,
-            "hint": "开启后，自动/手动思考在读取日程前会先尝试补生成今日日程；建议在已安装并配置 DayFlow 时开启。"
-          },
-          "enable_mood_system": {
-            "type": "bool",
-            "description": "启用心情系统",
-            "default": true,
-            "hint": "开启后，会在每次思考时生成心情标签，并默认注入到回复风格中。默认开启即可。"
-          },
-          "mood_provider_id": {
-            "type": "string",
-            "description": "心情模型提供商",
-            "default": "",
-            "_special": "select_provider",
-            "hint": "选择用于生成心情标签的模型提供商；留空则从思考文本中自动提取心情。通常可以留空。"
-          },
-          "mood_reference_reflection_count": {
+          "context_rounds": {
             "type": "int",
-            "description": "心情参考思考条数",
+            "description": "参考对话轮数",
             "default": 2,
-            "hint": "生成心情时参考最近几条思考；填 0 表示只参考当前思考。默认 2 条通常足够。"
+            "hint": "自动思考时参考最近多少轮对话上下文。默认 2 轮，通常已够用。"
           },
-          "mood_max_history_per_day": {
-            "type": "int",
-            "description": "每日保留心情记录数",
-            "default": 24,
-            "hint": "每天最多保留多少条心情记录；超出后会移除最早的记录。"
-          },
-          "mood_style_strength": {
+          "diary_provider_id": {
             "type": "string",
-            "description": "心情风格强度",
-            "default": "中",
-            "options": [
-              "弱",
-              "中",
-              "强"
-            ],
-            "hint": "心情对对话风格的影响强度。默认“中”最均衡。"
-          },
-          "mood_allow_sharp_tone": {
-            "type": "bool",
-            "description": "允许尖锐语气",
-            "default": false,
-            "hint": "开启后，烦躁/压抑等心情可能表现出更明显的不耐烦；关闭时即使心情不好也会保持基本友善。默认建议关闭。"
+            "description": "日记模型提供商",
+            "default": "",
+            "hint": "用于生成自动日记。留空则该人格无法执行自动/手动日记生成。建议选择一个稳定可用的模型提供商。",
+            "_special": "select_provider"
           },
           "diary_time": {
             "type": "string",
@@ -179,77 +132,53 @@
             ],
             "hint": "控制自动日记的长度与细节量。默认“适量”最均衡。"
           },
-          "diary_provider_id": {
-            "type": "string",
-            "description": "日记模型提供商",
-            "default": "",
-            "hint": "用于生成自动日记。留空则该人格无法执行自动/手动日记生成。建议选择一个稳定可用的模型提供商。",
-            "_special": "select_provider"
-          },
           "store_diary_to_memory": {
             "type": "bool",
             "description": "日记写入记忆系统",
             "default": true,
             "hint": "开启后，日记会写入 LivingMemory。若未安装 LivingMemory，建议关闭以避免无效写入。"
           },
-          "allow_overwrite_today_diary": {
+          "diary_push_targets": {
+            "type": "list",
+            "description": "人格级推送目标",
+            "default": [],
+            "hint": "主动消息推送目标列表；留空则不主动推送。仅在你明确需要自动把日记发往指定会话时再填写。格式示例：default:FriendMessage:123456。"
+          },
+          "enable_mood_system": {
             "type": "bool",
-            "description": "允许复写今日日记",
-            "default": false,
-            "hint": "开启后，可重复生成并覆盖今日日记。默认关闭，避免误覆盖当天内容。"
-          },
-          "diary_reference_count": {
-            "type": "int",
-            "description": "参考历史日记篇数",
-            "default": 2,
-            "hint": "生成日记时参考最近几篇历史日记，用于保持连续性。默认 2 篇即可。"
-          },
-          "reflection_reference_count": {
-            "type": "int",
-            "description": "思考参考条数",
-            "default": 2,
-            "hint": "生成新思考时参考最近几条思考。默认 2 条即可。"
-          },
-          "reflection_dedupe_mode": {
-            "type": "string",
-            "description": "思考近似去重强度",
-            "default": "普通",
-            "options": [
-              "严格",
-              "普通",
-              "无限制"
-            ],
-            "hint": "用于减少连续生成过于相似的思考。默认“普通”最均衡。"
-          },
-          "reflection_exact_prefix_guard": {
-            "type": "bool",
-            "description": "启用思考前缀保护",
+            "description": "启用心情系统",
             "default": true,
-            "hint": "开启后，可额外防止生成内容在开头部分过于重复。默认建议开启。"
+            "hint": "开启后，会在每次思考时生成心情标签，并默认注入到回复风格中。默认开启即可。"
           },
-          "reflection_generation_retry_count": {
+          "mood_style_strength": {
+            "type": "string",
+            "description": "心情风格强度",
+            "default": "中",
+            "options": [
+              "弱",
+              "中",
+              "强"
+            ],
+            "hint": "心情对对话风格的影响强度。默认“中”最均衡。"
+          },
+          "mood_allow_sharp_tone": {
+            "type": "bool",
+            "description": "允许尖锐语气",
+            "default": false,
+            "hint": "开启后，烦躁/压抑等心情可能表现出更明显的不耐烦；关闭时即使心情不好也会保持基本友善。默认建议关闭。"
+          },
+          "mood_provider_id": {
+            "type": "string",
+            "description": "心情模型提供商",
+            "default": "",
+            "_special": "select_provider",
+            "hint": "选择用于生成心情标签的模型提供商；留空则从思考文本中自动提取心情。通常可以留空。"
+          },
+          "mood_reference_reflection_count": {
             "type": "int",
-            "description": "思考生成重试次数",
+            "description": "心情参考思考条数",
             "default": 2,
-            "hint": "单次思考生成流程内，LLM 空结果或失败时额外重试几次。填 0 表示不重试。默认值通常已够用。"
-          },
-          "reflection_generation_retry_delay_seconds": {
-            "type": "float",
-            "description": "思考生成重试间隔（秒）",
-            "default": 2,
-            "hint": "思考生成重试之间的等待时间。默认 2 秒。"
-          },
-          "diary_generation_retry_count": {
-            "type": "int",
-            "description": "日记生成重试次数",
-            "default": 2,
-            "hint": "单次日记生成流程内，LLM 空结果或失败时额外重试几次。填 0 表示只尝试 1 次。默认值通常已够用。"
-          },
-          "diary_generation_retry_delay_seconds": {
-            "type": "float",
-            "description": "日记生成重试间隔（秒）",
-            "default": 2,
-            "hint": "日记生成重试之间的等待时间。默认 2 秒。"
+            "hint": "生成心情时参考最近几条思考；填 0 表示只参考当前思考。默认 2 条通常足够。"
           },
           "silent_hours_enabled": {
             "type": "bool",
@@ -261,13 +190,13 @@
             "type": "string",
             "description": "静默开始时间（HH:MM）",
             "default": "00:00",
-            "hint": "静默时段开始时间。"
+            "hint": "静默时段的开始时间，格式 HH:MM。"
           },
           "silent_hours_end": {
             "type": "string",
             "description": "静默结束时间（HH:MM）",
             "default": "06:00",
-            "hint": "静默时段结束时间。启用智能静默后作为兜底值使用。"
+            "hint": "静默时段的结束时间，格式 HH:MM。启用智能静默后作为兜底值使用。"
           },
           "smart_silent_hours": {
             "type": "bool",
@@ -275,29 +204,148 @@
             "default": false,
             "hint": "开启后，自动从 DayFlow 日程的睡眠时段提取静默结束时间（即日程中第一个时段的结束时间），无需手动配置。若日程尚未生成或提取失败，则回退到上方手动配置的静默结束时间。需安装 DayFlow 日程插件。"
           },
-          "diary_push_targets": {
-            "type": "list",
-            "description": "人格级推送目标",
-            "default": [],
-            "hint": "主动消息推送目标列表；留空则不主动推送。仅在你明确需要自动把日记发往指定会话时再填写。格式示例：default:FriendMessage:123456。"
+          "show_advanced": {
+            "type": "bool",
+            "description": "显示高级设置",
+            "default": false,
+            "hint": "开启后显示更多高级配置项，通常无需修改。"
+          },
+          "reflection_auto_ensure_today_schedule": {
+            "type": "bool",
+            "description": "思考前确保今日日程存在",
+            "default": true,
+            "hint": "开启后，自动/手动思考在读取日程前会先尝试补生成今日日程；建议在已安装并配置 DayFlow 时开启。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
+          "allow_overwrite_today_diary": {
+            "type": "bool",
+            "description": "允许复写今日日记",
+            "default": false,
+            "hint": "开启后，可重复生成并覆盖今日日记。默认关闭，避免误覆盖当天内容。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
+          "diary_reference_count": {
+            "type": "int",
+            "description": "参考历史日记篇数",
+            "default": 2,
+            "hint": "生成日记时参考最近几篇历史日记，用于保持连续性。默认 2 篇即可。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
+          "reflection_reference_count": {
+            "type": "int",
+            "description": "思考参考条数",
+            "default": 2,
+            "hint": "生成新思考时参考最近几条思考。默认 2 条即可。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
+          "mood_max_history_per_day": {
+            "type": "int",
+            "description": "每日保留心情记录数",
+            "default": 24,
+            "hint": "每天最多保留多少条心情记录；超出后会移除最早的记录。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
+          "reflection_dedupe_mode": {
+            "type": "string",
+            "description": "思考近似去重强度",
+            "default": "普通",
+            "options": [
+              "严格",
+              "普通",
+              "无限制"
+            ],
+            "hint": "用于减少连续生成过于相似的思考。默认“普通”最均衡。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
+          "reflection_exact_prefix_guard": {
+            "type": "bool",
+            "description": "启用思考前缀保护",
+            "default": true,
+            "hint": "开启后，可额外防止生成内容在开头部分过于重复。默认建议开启。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
+          "thinking_interval_jitter_seconds": {
+            "type": "int",
+            "description": "思考抖动秒数",
+            "default": 0,
+            "hint": "每轮调度都会在 ±该秒数范围内加入随机抖动，用于错开并发峰值。单人格或普通使用场景填 0 即可。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
+          "reflection_generation_retry_count": {
+            "type": "int",
+            "description": "思考生成重试次数",
+            "default": 2,
+            "hint": "单次思考生成流程内，LLM 空结果或失败时额外重试几次。填 0 表示不重试。默认值通常已够用。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
+          "reflection_generation_retry_delay_seconds": {
+            "type": "float",
+            "description": "思考生成重试间隔（秒）",
+            "default": 2,
+            "hint": "思考生成重试之间的等待时间。默认 2 秒。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
+          "diary_generation_retry_count": {
+            "type": "int",
+            "description": "日记生成重试次数",
+            "default": 2,
+            "hint": "单次日记生成流程内，LLM 空结果或失败时额外重试几次。填 0 表示只尝试 1 次。默认值通常已够用。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
+          "diary_generation_retry_delay_seconds": {
+            "type": "float",
+            "description": "日记生成重试间隔（秒）",
+            "default": 2,
+            "hint": "日记生成重试之间的等待时间。默认 2 秒。",
+            "condition": {
+              "show_advanced": true
+            }
           },
           "thinking_prompt_template_override": {
             "type": "text",
             "description": "思考提示词",
             "default": "",
-            "hint": "高级项。仅覆盖当前人格的思考模板；留空即可继承上方默认思考提示词。大多数情况下无需修改。",
+            "hint": "仅覆盖当前人格的思考模板；留空即可继承上方默认思考提示词。大多数情况下无需修改。",
             "editor_mode": true,
             "editor_language": "markdown",
-            "editor_theme": "vs-dark"
+            "editor_theme": "vs-dark",
+            "condition": {
+              "show_advanced": true
+            }
           },
           "diary_prompt_template_override": {
             "type": "text",
             "description": "日记提示词",
             "default": "",
-            "hint": "高级项。仅覆盖当前人格的日记模板；留空即可继承上方默认日记提示词。大多数情况下无需修改。",
+            "hint": "仅覆盖当前人格的日记模板；留空即可继承上方默认日记提示词。大多数情况下无需修改。",
             "editor_mode": true,
             "editor_language": "markdown",
-            "editor_theme": "vs-dark"
+            "editor_theme": "vs-dark",
+            "condition": {
+              "show_advanced": true
+            }
           }
         }
       }
