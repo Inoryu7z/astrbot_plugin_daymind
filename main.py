@@ -20,6 +20,7 @@ from .core import (
     AwarenessScheduler,
     ReflectionGenerator,
     DiaryGenerator,
+    DreamGenerator,
     DependencyManager,
     MessageCache,
     SilentHoursChecker,
@@ -59,6 +60,7 @@ class DayMindPlugin(Star, PersonaConfigMixin):
 
         self.reflection_generator: Optional[ReflectionGenerator] = None
         self.diary_generator: Optional[DiaryGenerator] = None
+        self.dream_generator: Optional[DreamGenerator] = None
         self.mood_manager: Optional[MoodManager] = None
         self.scheduler: Optional[AwarenessScheduler] = None
         self.webui: Optional[DayMindWebUI] = None
@@ -162,6 +164,10 @@ class DayMindPlugin(Star, PersonaConfigMixin):
             self.context, self.config, self.dependency_manager
         )
 
+        self.dream_generator = DreamGenerator(
+            self.context, self.config, self.dependency_manager, self.message_cache
+        )
+
         self.mood_manager = MoodManager(
             self.context, self.config, self.dependency_manager
         )
@@ -179,6 +185,7 @@ class DayMindPlugin(Star, PersonaConfigMixin):
             self.mood_manager,
             state_persist_callback=self._save_state,
             session_persona_activity_map=self.session_persona_activity_map,
+            dream_generator=self.dream_generator,
         )
 
         self._load_state()
@@ -409,6 +416,15 @@ class DayMindPlugin(Star, PersonaConfigMixin):
                             logger.info(
                                 f"[DayMind][debug] 注入心情到回复: session={event.unified_msg_origin}, current={mood.get('label', '未知')}, previous={(mood.get('previous_mood') or {}).get('label', '无')}, sub_labels={mood.get('sub_labels', [])}"
                             )
+
+            dream_memory = self.scheduler.get_dream_memory_for_session(event.unified_msg_origin)
+            if dream_memory:
+                req.system_prompt += f"\n\n### 梦境记忆\n你昨晚做了一个梦：{dream_memory}\n如果对话自然地涉及到相关话题，你可以选择提及这个梦，但不要强行插入。"
+                persona_name = self.session_persona_map.get(event.unified_msg_origin)
+                if persona_name:
+                    self.scheduler.mark_dream_shared(persona_name)
+                    if self._is_debug_mode():
+                        logger.info(f"[DayMind][debug] 注入梦境记忆: session={event.unified_msg_origin}, persona={persona_name}")
 
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, resp):
