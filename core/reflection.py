@@ -28,11 +28,87 @@ class ReflectionGenerator(PersonaConfigMixin):
         "改天",
     ]
 
+    SCHEDULE_SLOT_PATTERN = re.compile(
+        r"──\s*第\s*\d+\s*项\s*──\s*\n"
+        r"🕐\s*(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})\s*\n"
+        r"📌\s*(.+?)\s*\n"
+        r"📄\s*([\s\S]*?)(?=\n\n──\s*第\s*\d+\s*项\s*──|\n👗|\Z)",
+    )
+
     def __init__(self, context, config: dict, dependency_manager: DependencyManager, message_cache: MessageCache):
         self.context = context
         self.config = config
         self.dependency_manager = dependency_manager
         self.message_cache = message_cache
+
+    @staticmethod
+    def _parse_time_to_minutes(time_str: str) -> int:
+        try:
+            parts = time_str.strip().split(":")
+            return int(parts[0]) * 60 + int(parts[1])
+        except Exception:
+            return -1
+
+    def _extract_current_schedule_slot(self, schedule_text: str, current_time_str: str) -> dict:
+        if not schedule_text or not schedule_text.strip():
+            return {"found": False, "slots_text": "", "fallback": True}
+        slots = []
+        for m in self.SCHEDULE_SLOT_PATTERN.finditer(schedule_text):
+            start_str = m.group(1).strip()
+            end_str = m.group(2).strip()
+            title = m.group(3).strip()
+            detail = m.group(4).strip()
+            start_min = self._parse_time_to_minutes(start_str)
+            end_min = self._parse_time_to_minutes(end_str)
+            if start_min < 0 or end_min < 0:
+                continue
+            slots.append({
+                "start_str": start_str,
+                "end_str": end_str,
+                "start_min": start_min,
+                "end_min": end_min,
+                "title": title,
+                "detail": detail,
+                "raw": f"🕐 {start_str}-{end_str}\n📌 {title}\n📄 {detail}",
+            })
+        if not slots:
+            return {"found": False, "slots_text": schedule_text, "fallback": True}
+        current_min = self._parse_time_to_minutes(current_time_str)
+        if current_min < 0:
+            return {"found": False, "slots_text": schedule_text, "fallback": True}
+        current_idx = -1
+        for i, slot in enumerate(slots):
+            if slot["start_min"] <= current_min < slot["end_min"]:
+                current_idx = i
+                break
+        if current_idx < 0:
+            min_dist = float("inf")
+            for i, slot in enumerate(slots):
+                dist = min(abs(current_min - slot["start_min"]), abs(current_min - slot["end_min"]))
+                if dist < min_dist:
+                    min_dist = dist
+                    current_idx = i
+        start = max(0, current_idx - 1)
+        end = min(len(slots), current_idx + 2)
+        selected = slots[start:end]
+        parts = []
+        for s in selected:
+            marker = "【当前时段】" if s is slots[current_idx] else ""
+            parts.append(f"{marker}🕐 {s['start_str']}-{s['end_str']}\n📌 {s['title']}\n📄 {s['detail']}")
+        return {
+            "found": True,
+            "slots_text": "\n\n".join(parts),
+            "fallback": False,
+            "current_slot": slots[current_idx] if current_idx >= 0 else None,
+        }
+
+    def _parse_delta_and_body(self, result: str) -> str:
+        delta_match = re.match(r"^【变】(.+?)(?:\n|\r\n)([\s\S]*)", result)
+        if delta_match:
+            body = delta_match.group(2).strip()
+            if body:
+                return body
+        return result
 
     def _get_thinking_template(self, persona_name: str | None = None) -> str:
         override = str(self._persona_value(persona_name, "thinking_prompt_template_override", "") or "").strip()
@@ -118,7 +194,8 @@ class ReflectionGenerator(PersonaConfigMixin):
             )
             result = await self._call_llm(prompt, resolved_name)
             if result:
-                return self._format_result(current_time, result)
+                body = self._parse_delta_and_body(result)
+                return self._format_result(current_time, body)
             return None
         except Exception as e:
             logger.error(f"[ReflectionGenerator] 生成思考失败: {e}", exc_info=True)
@@ -137,6 +214,8 @@ class ReflectionGenerator(PersonaConfigMixin):
         template = self._get_thinking_template(persona_name)
         template = self._ensure_recent_awareness_placeholder(template)
         template = self._ensure_mode_definition_placeholder(template)
+        template = self._ensure_current_slot_placeholder(template)
+        template = self._ensure_delta_placeholder(template)
 
         weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
         weekday = weekday_names[datetime.datetime.now().weekday()]
@@ -167,6 +246,11 @@ class ReflectionGenerator(PersonaConfigMixin):
         if not state_info:
             state_info = "（暂无日程信息）"
 
+        slot_result = self._extract_current_schedule_slot(schedule, current_time)
+        current_slot_text = slot_result["slots_text"] if slot_result["found"] else ""
+        if not current_slot_text and schedule:
+            current_slot_text = schedule
+
         persona_name_text = persona_name or "（未绑定人格）"
         persona_desc_text = persona_desc or "（未获取到人格设定文本，请保持稳定自然、贴近既有人设气质的语气）"
         recent_awareness_text = last_awareness_text or "（暂无最近思考）"
@@ -178,6 +262,7 @@ class ReflectionGenerator(PersonaConfigMixin):
                 persona_name=persona_name_text,
                 persona_desc=persona_desc_text,
                 state_info=state_info.strip(),
+                current_slot=current_slot_text,
                 recent_messages=recent_messages_str,
                 mode_desc=mode_desc,
                 mode_definition=mode_definition,
@@ -190,7 +275,8 @@ class ReflectionGenerator(PersonaConfigMixin):
 
         if self.config.get("debug_mode", False):
             logger.info(
-                f"[ReflectionGenerator][debug] prompt state_info={state_info.strip()[:500]}, persona={persona_name_text}"
+                f"[ReflectionGenerator][debug] prompt state_info={state_info.strip()[:500]}, "
+                f"current_slot_fallback={slot_result.get('fallback')}, persona={persona_name_text}"
             )
         return prompt
 
@@ -216,6 +302,27 @@ class ReflectionGenerator(PersonaConfigMixin):
             return template.replace(marker, mode_block + "\n" + marker, 1)
         return template + mode_block
 
+    def _ensure_current_slot_placeholder(self, template: str) -> str:
+        if "{current_slot}" in template:
+            return template
+        marker = "## 当前互动背景"
+        slot_block = "\n## 当前时段日程（必须以此为思考主线）\n以下是当前及相邻时段的日程安排，标记【当前时段】的为你此刻正在经历的场景：\n{current_slot}\n\n"
+        if marker in template:
+            return template.replace(marker, slot_block + marker, 1)
+        marker2 = "## 核心规则"
+        if marker2 in template:
+            return template.replace(marker2, slot_block + "\n" + marker2, 1)
+        return slot_block + template
+
+    def _ensure_delta_placeholder(self, template: str) -> str:
+        if "【变】" in template:
+            return template
+        marker = "【模式定义】"
+        delta_hint = "\n输出格式（严格遵守）：\n第一行：【变】用一句话概括本次思考与上一条思考的差异点\n第二行起：第一人称正文\n\n"
+        if marker in template:
+            return template.replace(marker, delta_hint + marker, 1)
+        return template + delta_hint
+
     def _get_default_template(self) -> str:
         return """请你以第一人称，写出“此刻脑海里最鲜活的一小段意识切片”。
 
@@ -228,11 +335,14 @@ class ReflectionGenerator(PersonaConfigMixin):
 
 ## 当前时空锚点
 - 时间：{time}（{weekday}）
-- 当前现实状态：
-{state_info}
+- 穿着：{state_info}
 
-## 当前互动背景
-最近感知到的对话与互动：
+## 当前时段日程（必须以此为思考主线）
+以下是当前及相邻时段的日程安排，标记【当前时段】的为你此刻正在经历的场景：
+{current_slot}
+
+## 当前互动背景（仅作情绪参考，禁止作为思考主体）
+⚠️ 以下对话内容仅用于感知此刻是否有互动余温或情绪波动，绝对不可让对话内容主导思考正文。思考必须围绕【当前时段日程】展开。
 {recent_messages}
 
 ## 最近思考
@@ -240,80 +350,86 @@ class ReflectionGenerator(PersonaConfigMixin):
 
 ## 核心规则（绝对不可违背）
 
-1. 【现实边界绝对优先】
-你此刻的身体状态、所在场景、正在做的事，必须100%以【当前现实状态】为准。
-- 不得脱离今日日程擅自新增完全不同的地点、事件、行为。
-- 若当前时段信息有限，也只能在该场景内做轻微自然的补足，不能跳场景、跳主线。
-- 若现实状态处于睡眠、休息、发呆、独处等低活动状态，就写与之匹配的意识流，不能硬编高强度行动。
+1. 【日程对齐——最高优先级】
+思考正文必须与【当前时段日程】对齐。你此刻正在做的事、所处的场景，必须来自当前时段的日程安排。
+- 当前时段日程是思考的绝对主线，任何其他信息都不得篡夺这个位置。
+- 即使最近对话内容很吸引人，也只能作为情绪的轻微点缀，不能让对话事件成为思考的主体。
+- 若当前时段是“吃饭”，思考就必须围绕吃饭场景；若当前时段是“跳舞”，思考就必须围绕跳舞场景。
+- 日程中的具体动作、场景细节是你取材的第一来源。
 
 2. 【思考不是复述日程】
 日程只是现实骨架，不是正文模板。
 - 不要把日程原文换一种说法重写一遍。
 - 你要写的是“这一刻真正浮上来的意识内容”，而不是把今天安排重新描述。
+- 在日程提供的场景框架内，写出真实的内心体验和意识流动。
 
 3. 【信息选择顺序必须明确】
 当输入信息很多时，按以下优先级取材：
-- 第一优先：这一刻正在发生的核心活动 / 处境
-- 第二优先：此刻最突出的情绪、注意力落点、心理余波
-- 第三优先：最近对话带来的轻微情绪残留或关注点
-- 第四优先：最近思考提供的连续性线索
+- 第一优先：当前时段日程中正在发生的核心活动 / 场景
+- 第二优先：在此场景中此刻最突出的身体感受、动作细节、环境互动
+- 第三优先：此刻最突出的情绪、注意力落点
+- 第四优先：最近对话带来的轻微情绪残留（最多一句话带过，不可展开）
+- 第五优先：最近思考提供的连续性线索
 - 最低优先：穿搭、外貌、材质、配色、饰品等外观信息
 
-4. 【服装只可一笔带过】
-即使【当前现实状态】里存在大量穿搭描写，正文也不得展开复述服装细节。
+4. 【对话内容严格降权】
+最近对话只能提供极其轻微的情绪底色（如“被夸了一句，心里有点甜”），绝对不能：
+- 让对话中的具体事件、措辞、人物成为思考的核心内容
+- 反复围绕同一句对话内容展开（如反复想“他说了xxx”）
+- 把思考写成对对话的回应或延续
+- 若对话内容与当前日程场景无关，直接忽略，不要强行关联
+
+5. 【服装只可一笔带过】
+即使穿着信息里存在大量描写，正文也不得展开复述服装细节。
 - 除非服装与当前行动直接相关，否则不要主动提及。
 - 若确实必须提到，最多一句概括带过，禁止详细描述材质、款式、颜色、搭配、饰品。
 
-5. 【最近思考只用于保持连续性，禁止复读】
+6. 【必须写出与上一条思考的差异】
+每次思考必须体现推进感，禁止重复上一条思考的情绪焦点、动作焦点或场景焦点。
+- 如果上一条在想“心跳加速”，这一条就不能再以“心跳”为核心。
+- 如果上一条在“串珠子”，这一条就必须写出动作推进（如“线穿过了第三颗珠子”）或场景变化。
+- 差异可以很小，但必须真实存在且可感知。
+
+7. 【最近思考只用于保持连续性，禁止复读】
 {recent_awareness} 只用于帮助你知道“今天已经想过什么”，不是让你把它们换说法重写。
-- 如果最近思考与当前场景高度相似，必须写出“此刻的新变化”。
-- 这个新变化可以很小，但必须真实存在，例如：动作推进了一点、情绪浓淡变了、注意力转移了、互动对象变化了、环境状态变化了。
 - 不允许只换词不换内容。
 
-6. 【最近对话只作气氛参考】
-最近对话只用于判断此刻有没有互动余温、情绪波动、注意力牵引。
-- 不要直接照搬对话措辞。
-- 不要写成对话回复。
-- 若最近对话中包含未来安排、明天事项等内容，默认降权处理，不得让正文重心滑向未来。
-
-7. 【时间边界只限今天与此刻】
+8. 【时间边界只限今天与此刻】
 自动思考只允许落在“当前时刻”与“今天范围内”的体验。
 - 不主动展开明天、后天、未来几天的计划或安排。
 - 不得把正文重心写成未来打算。
 - 如果出现轻微挂念，也要立刻收回到此刻。
 
-8. 【不要强行凑完整结构】
+9. 【不要强行凑完整结构】
 每次思考不必机械包含“动作 + 身体感受 + 内心想法”三项。
 - 有时只写一个最真实的念头就够了。
 - 有时只写动作里的情绪就够了。
 - 有时只写场景推进后留下的一点余韵就够了。
 - 重点是自然、准确、有当下感，不是形式完整。
 
-9. 【这是自我思考，不是对外说话】
+10. 【这是自我思考，不是对外说话】
 - 正文不要直接使用“你、你们”去称呼聊天对象。
 - 如果必须提到互动对象，只能用第三人称表达。
 - 禁止写成打招呼、安慰、回应、汇报。
 
 ## 输出规范
 请严格匹配当前模式定义，同时遵守{length_hint}的长度要求。
-直接输出第一人称正文，不要任何标题、说明、前缀、括号注释。
+
+输出格式（严格遵守）：
+第一行：【变】用一句话概括本次思考与上一条思考的差异点
+第二行起：第一人称正文
+
+示例：
+【变】从串珠动作推进到收拾材料
+指尖把最后一颗珠子推到线结处，线头终于不再打滑了。把尖嘴钳搞回桌面，看着腕间这条歪歪扭扭的手链，嘴角不自觉地翘了一下。
 
 【模式定义】
 {mode_definition}
 
-- 简洁：一瞬间的意识截面（30字内）。
-  只写此刻最核心的一点状态或念头，不要求补全所有维度；允许只落一个动作、一个感受或一个注意力焦点，但必须自然完整，不能空泛。
-
-- 适量：一小段完整的当下体验（80字内）。
-  围绕当前主活动，写出“此刻在做什么”与“心里最突出的落点”，必要时可带一个轻微环境细节或互动余温。重点是有当下推进感，不要写成日程摘要。
-
-- 丰富：更有生活颗粒度的现场切片（150字内）。
-  在不改变现实主线的前提下，可补充1—2个符合当前场景的小细节、小动作、环境互动或额外的小插曲，增强真实生活感。
-
 【兜底规则】
-- 若【当前现实状态】为空，默认处于自然放松的普通日常状态，结合【当前互动背景】写此刻意识流。
-- 若【当前互动背景】为空，就聚焦当前场景中的身体状态、注意力落点和自然情绪。
-- 若【最近思考】与当前时段高度重合，优先写“这一刻和上一刻相比，哪里变了一点”。
+- 若【当前时段日程】为空，默认处于自然放松的普通日常状态，结合互动背景写此刻意识流。
+- 若互动背景也为空，就聚焦当前场景中的身体状态、注意力落点和自然情绪。
+- 若最近思考与当前时段高度重合，必须写出“这一刻和上一刻相比，哪里变了一点”。
 """
 
     def _normalize_recent_role_prefix(self, text: str) -> str:
