@@ -3440,8 +3440,8 @@ class DayMindWebUI:
       try {
         if (state.mode === 'diary') {
           const data = await api(`/api/diaries/${date}?persona_name=${encodeURIComponent(personaName || currentPersona())}`);
-          state.activeDetail = data;
-          const d = data;
+          const d = data.data;
+          state.activeDetail = d;
           reader.innerHTML = `
             <button class="desk-reader-close" id="deskReaderClose">✕</button>
             <div class="desk-reader-date">${esc(d.date)}</div>
@@ -3452,8 +3452,8 @@ class DayMindWebUI:
             </div>`;
         } else {
           const data = await api(`/api/reflections/${date}?persona_name=${encodeURIComponent(personaName || currentPersona())}`);
-          state.activeDetail = data;
-          const d = data;
+          const d = data.data;
+          state.activeDetail = d;
           reader.innerHTML = `
             <button class="desk-reader-close" id="deskReaderClose">✕</button>
             <div class="desk-reader-date">${esc(d.date)}</div>
