@@ -144,6 +144,12 @@
             "default": [],
             "hint": "主动消息推送目标列表；留空则不主动推送。仅在你明确需要自动把日记发往指定会话时再填写。格式示例：default:FriendMessage:123456。"
           },
+          "enable_diary_image": {
+            "type": "bool",
+            "description": "日记渲染为图片",
+            "default": false,
+            "hint": "开启后，日记生成时会渲染为纸质手写风格的图片发送，而非纯文字。需要安装 Pillow 库。"
+          },
           "enable_mood_system": {
             "type": "bool",
             "description": "启用心情系统",

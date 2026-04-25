@@ -4,6 +4,7 @@ from .scheduler import AwarenessScheduler
 from .reflection import ReflectionGenerator
 from .diary import DiaryGenerator
 from .dream import DreamGenerator
+from .diary_renderer import DiaryRenderer
 from .dependency import DependencyManager
 from .message_cache import MessageCache
 from .silent_hours import SilentHoursChecker
@@ -16,6 +17,7 @@ __all__ = [
     "ReflectionGenerator",
     "DiaryGenerator",
     "DreamGenerator",
+    "DiaryRenderer",
     "DependencyManager",
     "MessageCache",
     "SilentHoursChecker",
