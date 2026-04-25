@@ -5,6 +5,7 @@ astrbot_plugin_daymind - 心智手记
 import json
 import datetime
 import asyncio
+import base64
 import threading
 from pathlib import Path
 from typing import Optional
@@ -21,6 +22,7 @@ from .core import (
     ReflectionGenerator,
     DiaryGenerator,
     DreamGenerator,
+    DiaryRenderer,
     DependencyManager,
     MessageCache,
     SilentHoursChecker,
@@ -164,6 +166,8 @@ class DayMindPlugin(Star, PersonaConfigMixin):
             self.context, self.config, self.dependency_manager
         )
 
+        self.diary_renderer = DiaryRenderer(self.data_dir)
+
         self.dream_generator = DreamGenerator(
             self.context, self.config, self.dependency_manager, self.message_cache
         )
@@ -186,6 +190,7 @@ class DayMindPlugin(Star, PersonaConfigMixin):
             state_persist_callback=self._save_state,
             session_persona_activity_map=self.session_persona_activity_map,
             dream_generator=self.dream_generator,
+            diary_renderer=self.diary_renderer,
         )
 
         self._load_state()
@@ -615,7 +620,18 @@ class DayMindPlugin(Star, PersonaConfigMixin):
             yield event.plain_result(f"当前人格 {normalized_persona} 今日日记内容为空")
             return
 
-        yield event.plain_result(f"人格：{normalized_persona}\n日期：{today_str}\n\n{content}")
+        enable_image = bool(self._persona_value(persona_name, "enable_diary_image", False))
+        if enable_image:
+            image_bytes = await asyncio.to_thread(
+                self.diary_renderer.render, content, today_str, normalized_persona
+            )
+            if image_bytes:
+                b64_str = base64.b64encode(image_bytes).decode()
+                yield event.make_result().base64_image(b64_str)
+            else:
+                yield event.plain_result(f"人格：{normalized_persona}\n日期：{today_str}\n\n{content}")
+        else:
+            yield event.plain_result(f"人格：{normalized_persona}\n日期：{today_str}\n\n{content}")
 
     @filter.command("昨日日记", alias={"查看昨日日记", "daymind_diary_yesterday"})
     async def yesterday_diary(self, event: AstrMessageEvent):
@@ -643,7 +659,18 @@ class DayMindPlugin(Star, PersonaConfigMixin):
             yield event.plain_result(f"当前人格 {normalized_persona} 在 {yesterday_str} 的日记内容为空")
             return
 
-        yield event.plain_result(f"人格：{normalized_persona}\n日期：{yesterday_str}\n\n{content}")
+        enable_image = bool(self._persona_value(persona_name, "enable_diary_image", False))
+        if enable_image:
+            image_bytes = await asyncio.to_thread(
+                self.diary_renderer.render, content, yesterday_str, normalized_persona
+            )
+            if image_bytes:
+                b64_str = base64.b64encode(image_bytes).decode()
+                yield event.make_result().base64_image(b64_str)
+            else:
+                yield event.plain_result(f"人格：{normalized_persona}\n日期：{yesterday_str}\n\n{content}")
+        else:
+            yield event.plain_result(f"人格：{normalized_persona}\n日期：{yesterday_str}\n\n{content}")
 
     @filter.command("手动思考")
     async def manual_reflection(self, event: AstrMessageEvent):
@@ -723,7 +750,24 @@ class DayMindPlugin(Star, PersonaConfigMixin):
                     f"👕 今日穿搭：{outfit}\n"
                     f"📝 日程安排：\n{schedule}\n\n"
                 )
-            yield event.plain_result(f"{prefix}今日日记：\n\n{result.get('content', '')}{extra}")
+
+            diary_content = result.get("content", "")
+            enable_image = bool(self._persona_value(persona_name, "enable_diary_image", False))
+
+            if enable_image:
+                today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+                image_bytes = await asyncio.to_thread(
+                    self.diary_renderer.render, diary_content, today_str, persona_name or ""
+                )
+                if image_bytes:
+                    if prefix:
+                        yield event.plain_result(prefix.rstrip())
+                    b64_str = base64.b64encode(image_bytes).decode()
+                    yield event.make_result().base64_image(b64_str)
+                else:
+                    yield event.plain_result(f"{prefix}今日日记：\n\n{diary_content}{extra}")
+            else:
+                yield event.plain_result(f"{prefix}今日日记：\n\n{diary_content}{extra}")
             return
         yield event.plain_result(result.get("message") or "日记生成失败，请检查模型提供商配置")
 

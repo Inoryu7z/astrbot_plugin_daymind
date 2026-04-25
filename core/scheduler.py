@@ -47,6 +47,7 @@ class AwarenessScheduler(PersonaConfigMixin):
         state_persist_callback=None,
         session_persona_activity_map: dict[str, str] | None = None,
         dream_generator: DreamGenerator | None = None,
+        diary_renderer=None,
     ):
         self.context = context
         self.config = config
@@ -54,6 +55,7 @@ class AwarenessScheduler(PersonaConfigMixin):
         self.reflection_generator = reflection_generator
         self.diary_generator = diary_generator
         self.dream_generator = dream_generator
+        self.diary_renderer = diary_renderer
         self.dependency_manager = dependency_manager
         self.message_cache = message_cache
         self.silent_hours = silent_hours
@@ -2033,13 +2035,34 @@ class AwarenessScheduler(PersonaConfigMixin):
         if not targets:
             logger.debug("[Scheduler] 未配置推送目标")
             return
+
+        enable_image = bool(self._persona_value(persona_name, "enable_diary_image", False))
+        image_bytes = None
+        if enable_image and self.diary_renderer:
+            import datetime as _dt
+            date_str = _dt.datetime.now().strftime("%Y-%m-%d")
+            image_bytes = await asyncio.to_thread(
+                self.diary_renderer.render, content, date_str, persona_name or ""
+            )
+
         for target in targets:
             try:
-                await self._send_message_to_target(target, content)
+                if image_bytes:
+                    await self._send_image_to_target(target, image_bytes)
+                else:
+                    await self._send_message_to_target(target, content)
             except Exception as e:
                 self._record_diary_error(persona_name or "未命名人格", "push_failed", f"target={target}, error={e}")
                 self._persist_state()
                 logger.error(f"[Scheduler] 推送日记到 {target} 失败: {e}", exc_info=True)
+
+    async def _send_image_to_target(self, target: str, image_bytes: bytes):
+        import base64
+        from astrbot.core.message.components import Image as CompImage
+        b64_str = base64.b64encode(image_bytes).decode()
+        chain = MessageChain(chain=[CompImage(file=f"base64://{b64_str}")])
+        await self.context.send_message(target, chain)
+        logger.info(f"[Scheduler] 日记图片已推送到: {target}")
 
     async def _send_message_to_target(self, target: str, content: str):
         chain = MessageChain(chain=[Plain(text=str(content or ""))])
