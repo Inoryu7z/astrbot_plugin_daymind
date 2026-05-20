@@ -29,6 +29,7 @@ from .core import (
     DayMindWebUI,
     MoodManager,
     PersonaConfigMixin,
+    ProactiveChatManager,
 )
 
 
@@ -65,6 +66,7 @@ class DayMindPlugin(Star, PersonaConfigMixin):
         self.dream_generator: Optional[DreamGenerator] = None
         self.diary_renderer: Optional[DiaryRenderer] = None
         self.mood_manager: Optional[MoodManager] = None
+        self.proactive_chat_manager: Optional[ProactiveChatManager] = None
         self.scheduler: Optional[AwarenessScheduler] = None
         self.webui: Optional[DayMindWebUI] = None
 
@@ -177,6 +179,10 @@ class DayMindPlugin(Star, PersonaConfigMixin):
             self.context, self.config, self.dependency_manager
         )
 
+        self.proactive_chat_manager = ProactiveChatManager(
+            self.context, self.config, self.dependency_manager
+        )
+
         self.scheduler = AwarenessScheduler(
             self.context,
             self.config,
@@ -192,6 +198,7 @@ class DayMindPlugin(Star, PersonaConfigMixin):
             session_persona_activity_map=self.session_persona_activity_map,
             dream_generator=self.dream_generator,
             diary_renderer=self.diary_renderer,
+            proactive_chat_manager=self.proactive_chat_manager,
         )
 
         self._load_state()

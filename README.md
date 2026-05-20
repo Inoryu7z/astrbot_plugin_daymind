@@ -104,6 +104,23 @@ DayMind 支持在思考或日记生成前，自动检测今日日程是否存在
 - 避免因日程空了导致思考没素材、日记生成失败的问题。
 - 可通过 `reflection_auto_ensure_today_schedule` 开关控制是否启用。
 
+### 🗣️ 思考后主动对话
+
+DayMind 支持在思考后让 Bot 主动发起对话。
+
+工作方式：
+- 思考时，LLM 可选择调用 `daymind_want_to_chat` 工具
+- 若工具被调用，DayMind 会使用对话模型生成一条自然消息，主动发送给配置的目标
+- 发送的消息会写入对话历史，确保上下文连贯
+
+三档控制：
+- **关闭**：不提供此工具，LLM 无法触发主动对话
+- **低频**：仅在思考中产生强烈交流倾向时才调用
+- **普通**：LLM 自行判断是否需要主动对话
+
+冷却机制：
+- 同一推送目标两次主动对话之间有冷却时间（默认 90 分钟），防止频繁打扰
+
 ### 🧩 多人格隔离
 
 DayMind 支持按人格隔离运行：
@@ -245,6 +262,11 @@ DayFlow 可以读取 DayMind 的心情状态，用于：
 - `enable_dream`：是否启用梦境（默认开启）
 - `dream_count_range`：每夜梦境数量范围（如 "1-2"）
 - `dream_provider_id`：梦境模型提供商（留空则复用思考提供商）
+
+### 主动对话
+- `proactive_chat_mode`：思考后主动对话模式（关闭 / 低频 / 普通，默认关闭）
+- `proactive_chat_push_target`：主动对话推送目标（UMO 格式，如 `default:FriendMessage:123456`）
+- `proactive_chat_cooldown_minutes`：主动对话冷却时间（分钟，默认 90，高级设置）
 
 ---
 

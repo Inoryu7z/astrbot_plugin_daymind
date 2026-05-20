@@ -13,6 +13,7 @@ from .mood import MoodManager
 from .persona_utils import PersonaConfigMixin
 from .dream_ops import DreamOperations
 from .diary_ops import DiaryOperations
+from .proactive_chat import ProactiveChatManager
 
 __all__ = [
     "AwarenessScheduler",
@@ -28,4 +29,5 @@ __all__ = [
     "PersonaConfigMixin",
     "DreamOperations",
     "DiaryOperations",
+    "ProactiveChatManager",
 ]
