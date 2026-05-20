@@ -229,6 +229,32 @@
             "_special": "select_provider",
             "hint": "用于生成梦境的模型提供商；留空则复用思考模型提供商。梦境对模型能力要求不高，可用较便宜的模型。"
           },
+          "proactive_chat_mode": {
+            "type": "string",
+            "description": "思考后主动对话",
+            "default": "关闭",
+            "options": [
+              "关闭",
+              "低频",
+              "普通"
+            ],
+            "hint": "开启后，思考时 LLM 可以调用工具主动向指定目标发起对话。关闭则不提供此工具；低频模式下 LLM 仅在产生强烈倾向时才调用；普通模式下 LLM 自行判断。"
+          },
+          "proactive_chat_push_target": {
+            "type": "string",
+            "description": "主动对话推送目标",
+            "default": "",
+            "hint": "主动对话的消息发送目标，仅支持一个。格式示例：default:FriendMessage:123456。留空则即使 LLM 调用工具也不会发送。"
+          },
+          "proactive_chat_cooldown_minutes": {
+            "type": "int",
+            "description": "主动对话冷却时间（分钟）",
+            "default": 90,
+            "hint": "同一推送目标两次主动对话之间的最短间隔。默认 90 分钟。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
           "show_advanced": {
             "type": "bool",
             "description": "显示高级设置",

@@ -19,6 +19,7 @@ from .mood import MoodManager, extract_mood_baseline_from_diary_text, MOOD_DECAY
 from .persona_utils import PersonaConfigMixin
 from .dream_ops import DreamOperations
 from .diary_ops import DiaryOperations
+from .proactive_chat import ProactiveChatManager
 
 
 class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
@@ -48,6 +49,7 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
         session_persona_activity_map: dict[str, str] | None = None,
         dream_generator: DreamGenerator | None = None,
         diary_renderer=None,
+        proactive_chat_manager: ProactiveChatManager | None = None,
     ):
         self.context = context
         self.config = config
@@ -63,6 +65,7 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
         self.session_persona_activity_map = session_persona_activity_map if session_persona_activity_map is not None else {}
         self.mood_manager = mood_manager
         self.state_persist_callback = state_persist_callback
+        self.proactive_chat_manager = proactive_chat_manager
 
         self.runtime_config: dict[str, Any] = {
             "reflection_retention_days": self._safe_retention_days(config.get("reflection_retention_days", 3), 3),
@@ -263,6 +266,7 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                     "dream_aftereffect": None,
                     "was_silent_last_cycle": False,
                 },
+                "last_proactive_chat_time": {},
             }
         return self.persona_states[persona_name]
 
@@ -303,6 +307,7 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                 "last_selected_session_id": state.get("last_selected_session_id"),
                 "last_selected_session_source": str(state.get("last_selected_session_source") or "none"),
                 "dream_state": state.get("dream_state", {}),
+                "last_proactive_chat_time": state.get("last_proactive_chat_time") or {},
             }
         return payload
 
@@ -362,6 +367,9 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
             saved_dream_state = state.get("dream_state")
             if isinstance(saved_dream_state, dict):
                 item["dream_state"] = saved_dream_state
+            saved_proactive_chat_time = state.get("last_proactive_chat_time")
+            if isinstance(saved_proactive_chat_time, dict):
+                item["last_proactive_chat_time"] = saved_proactive_chat_time
 
     async def get_current_awareness_for_session(self, session_id: str | None) -> str:
         if not session_id:
@@ -452,6 +460,7 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
         state["last_diary_cooldown_until"] = None
         state["last_diary_failed_trigger_key"] = ""
         state["last_mood_decay_time"] = None
+        state["last_proactive_chat_time"] = {}
         state["dream_state"] = {
             "tonight_dreams": [],
             "dream_count": 0,
@@ -694,27 +703,30 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
         selected_session_id: str | None,
         persona_name: str,
         resolved_desc: str | None,
-    ) -> str | None:
+        tools=None,
+    ) -> tuple[str | None, Any]:
         max_retries = self._get_reflection_generation_retry_count(persona_name)
         retry_delay = self._get_reflection_generation_retry_delay_seconds(persona_name)
         last_result = None
+        last_raw_response = None
         for attempt in range(max_retries + 1):
-            last_result = await self.reflection_generator.generate(
+            last_result, last_raw_response = await self.reflection_generator.generate(
                 current_time_str,
                 selected_session_id,
                 self._build_recent_reflections_text(persona_name),
                 persona_name,
                 resolved_desc,
+                tools=tools,
             )
             if last_result:
                 if attempt > 0:
                     logger.info(f"[Scheduler] 思考生成重试成功: persona={persona_name}, attempt={attempt + 1}")
-                return last_result
+                return last_result, last_raw_response
             if attempt < max_retries:
                 logger.warning(f"[Scheduler] 思考生成失败，准备重试: persona={persona_name}, attempt={attempt + 1}/{max_retries + 1}, delay={retry_delay}s")
                 if retry_delay > 0:
                     await asyncio.sleep(retry_delay)
-        return last_result
+        return last_result, last_raw_response
 
     def _get_interval_seconds(self, persona_name: str | None) -> int:
         interval_minutes = float(self._persona_value(persona_name, "thinking_interval_minutes", 30) or 30)
@@ -1309,11 +1321,16 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                     f"[Scheduler][debug] 开始执行思考: persona={persona_name}, manual={manual}, session={selected_session_id}, session_source={state.get('last_selected_session_source')}"
                 )
 
-            result = await self._run_reflection_generation_with_retries(
+            tools = None
+            if self.proactive_chat_manager and self.proactive_chat_manager.is_proactive_chat_enabled(persona_name):
+                tools = self.proactive_chat_manager.build_tool_set(persona_name)
+
+            result, raw_response = await self._run_reflection_generation_with_retries(
                 current_time_str=current_time_str,
                 selected_session_id=selected_session_id,
                 persona_name=persona_name,
                 resolved_desc=resolved_desc,
+                tools=tools,
             )
             if result:
                 if self._is_duplicate_reflection(persona_name, result):
@@ -1354,6 +1371,22 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                         logger.warning(f"[Scheduler] 心情生成失败: {e}")
                 self._persist_state()
                 logger.info(f"[Scheduler] 思考完成: persona={persona_name}, result={result}")
+
+                if tools and raw_response and self.proactive_chat_manager:
+                    try:
+                        if self.proactive_chat_manager.check_tool_called(raw_response):
+                            push_target = self.proactive_chat_manager.get_push_target(persona_name)
+                            if push_target:
+                                proactive_result = await self.proactive_chat_manager.execute_proactive_chat(
+                                    persona_name, push_target, state
+                                )
+                                logger.info(f"[Scheduler] 主动对话结果: persona={persona_name}, status={proactive_result.get('status')}, message={proactive_result.get('message')}")
+                                self._persist_state()
+                            else:
+                                logger.debug(f"[Scheduler] 主动对话 Tool 被调用但未配置推送目标: persona={persona_name}")
+                    except Exception as e:
+                        logger.warning(f"[Scheduler] 主动对话执行失败: persona={persona_name}, error={e}")
+
                 return {"status": "success", "text": result, "mood": self.get_current_mood_for_persona(persona_name) if mood_result else None}
 
             state["consecutive_failures"] = self._safe_non_negative_int(state.get("consecutive_failures", 0), default=0) + 1

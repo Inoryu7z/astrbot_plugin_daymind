@@ -227,7 +227,8 @@ class ReflectionGenerator(PersonaConfigMixin):
         last_awareness_text: Optional[str] = None,
         persona_name: Optional[str] = None,
         persona_desc: Optional[str] = None,
-    ) -> Optional[str]:
+        tools=None,
+    ) -> tuple[Optional[str], Any]:
         """生成思考内容"""
         try:
             canonical_persona = self._canonical_persona_name(persona_name)
@@ -293,14 +294,14 @@ class ReflectionGenerator(PersonaConfigMixin):
                 resolved_name,
                 resolved_desc,
             )
-            result = await self._call_llm(prompt, resolved_name)
+            result, raw_response = await self._call_llm(prompt, resolved_name, tools=tools)
             if result:
                 body = self._parse_delta_and_body(result)
-                return self._format_result(current_time, body)
-            return None
+                return self._format_result(current_time, body), raw_response
+            return None, raw_response
         except Exception as e:
             logger.error(f"[ReflectionGenerator] 生成思考失败: {e}", exc_info=True)
-            return None
+            return None, None
 
     def _build_prompt(
         self,
@@ -623,34 +624,37 @@ class ReflectionGenerator(PersonaConfigMixin):
         except Exception:
             return default
 
-    async def _call_llm(self, prompt: str, persona_name: str | None = None) -> Optional[str]:
-        """调用 LLM，并输出更明确的失败分类日志"""
+    async def _call_llm(self, prompt: str, persona_name: str | None = None, tools=None) -> tuple[Optional[str], Any]:
+        """调用 LLM，并输出更明确的失败分类日志。返回 (completion_text, raw_response)。"""
         provider_id = self._persona_value(persona_name, "thinking_provider_id", "")
         try:
             if not provider_id:
                 provider_id = await self._get_default_provider_id()
             if not provider_id:
                 logger.error("[ReflectionGenerator] 思考失败[provider_missing]: 没有配置思考模型提供商")
-                return None
-            response = await self.context.llm_generate(
-                chat_provider_id=provider_id,
-                prompt=prompt
-            )
+                return None, None
+            kwargs = {
+                "chat_provider_id": provider_id,
+                "prompt": prompt,
+            }
+            if tools is not None:
+                kwargs["tools"] = tools
+            response = await self.context.llm_generate(**kwargs)
             if response is None:
                 logger.error(f"[ReflectionGenerator] 思考失败[empty_response]: provider={provider_id} 返回空响应对象")
-                return None
+                return None, None
             completion_text = getattr(response, "completion_text", None)
             if completion_text and completion_text.strip():
-                return completion_text.strip()
+                return completion_text.strip(), response
             logger.error(f"[ReflectionGenerator] 思考失败[empty_completion]: provider={provider_id} completion_text为空")
-            return None
+            return None, response
         except Exception as e:
             err_text = str(e)
             if "no choices" in err_text.lower():
                 logger.error(f"[ReflectionGenerator] 思考失败[provider_no_choices]: provider={provider_id}, error={e}")
             else:
                 logger.error(f"[ReflectionGenerator] 思考失败[provider_exception]: provider={provider_id}, error={e}")
-            return None
+            return None, None
 
     async def _get_default_provider_id(self) -> Optional[str]:
         try:

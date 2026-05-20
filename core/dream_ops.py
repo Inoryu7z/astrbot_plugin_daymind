@@ -145,6 +145,9 @@ class DreamOperations:
                     state["previous_mood"] = self._simplify_mood(current_mood)
                     state["current_mood"] = dream_mood
 
+            if dream_mood:
+                state.setdefault("today_moods", []).append(dream_mood)
+                self._trim_today_moods(persona_name)
             logger.info(f"[Scheduler] 梦境余韵: persona={persona_name}, mood={dream_mood.get('label')}")
 
         dream_state["dream_memory"] = tonight_dreams[-1] if tonight_dreams else None

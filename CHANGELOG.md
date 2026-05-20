@@ -1,3 +1,16 @@
+### v1.8.0
+
+**🗣️ 思考后主动对话**
+
+* 新增思考后主动对话功能：思考时 LLM 可调用 `daymind_want_to_chat` 工具，触发向指定目标发送主动消息
+* 三档控制模式：关闭（默认）/ 低频（仅强烈倾向时调用）/ 普通（LLM 自行判断）
+* 主动对话使用对话模型生成自然消息，手动触发 on_llm_request 和 decorating 钩子，确保完整链路
+* 发送的消息自动写入对话历史，保证上下文连贯
+* 按推送目标的冷却机制，防止频繁打扰（默认 90 分钟，高级设置可调）
+* 新增人格级配置项：`proactive_chat_mode`、`proactive_chat_push_target`、`proactive_chat_cooldown_minutes`
+
+---
+
 ### v1.7.0
 
 **🧠 思考模块适配 DayFlow 细分骨架**
