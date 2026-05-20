@@ -5,7 +5,7 @@
 
 import re
 import datetime
-from typing import Optional
+from typing import Any, Optional
 from astrbot.api import logger
 
 from .dependency import DependencyManager
