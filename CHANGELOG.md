@@ -1,3 +1,16 @@
+### v1.8.1
+
+**🐛 适配 LivingMemory v2.0+ 新版 API**
+
+* 修复 `mark_daymind_diary_memories_deleted` 调用 `search_memory`（单数）方法在 livingmemory v2.0+ 上抛 `AttributeError` 的问题，新版 API 已重命名为 `search_memories`（复数）
+* 修复搜索参数 `top_k=50` 在新版 API 上不兼容的问题，新版使用 `k` 参数
+* 修复搜索结果 `HybridResult` dataclass 对象被当作字典访问（`memory.get("metadata")` / `memory["id"]`）导致 `AttributeError` 的问题，改用属性访问（`memory.metadata` / `memory.doc_id`）
+* 新增 `_extract_memory_metadata` / `_extract_memory_id` 兼容辅助方法，同时支持新版 dataclass 与旧版 dict 两种返回形式
+* 通过 `hasattr` 探测同时兼容新版 `search_memories` 与旧版 `search_memory`，确保向后兼容
+* 影响范围：旧日记的"标记删除"流程（日记重新生成时清理旧记忆），不影响新日记的存储（`add_memory` API 一直兼容）
+
+---
+
 ### v1.8.0
 
 **🗣️ 思考后主动对话**

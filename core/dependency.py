@@ -377,6 +377,44 @@ class DependencyManager:
             logger.warning(f"[DayMind] 从 livingmemory 实例提取 memory_engine 失败: {e}")
             return None
 
+    @staticmethod
+    def _extract_memory_metadata(memory) -> dict | None:
+        """
+        从记忆条目中提取 metadata 字典。
+
+        兼容 livingmemory v2.0+ 的 HybridResult dataclass（属性访问）
+        与旧版的 dict 返回（键访问）。
+        """
+        if memory is None:
+            return None
+        # dataclass / 对象形式（v2.0+ HybridResult）
+        if hasattr(memory, "metadata"):
+            metadata = getattr(memory, "metadata")
+            return metadata if isinstance(metadata, dict) else None
+        # dict 形式（旧版）
+        if isinstance(memory, dict):
+            metadata = memory.get("metadata")
+            return metadata if isinstance(metadata, dict) else None
+        return None
+
+    @staticmethod
+    def _extract_memory_id(memory) -> int | str | None:
+        """
+        从记忆条目中提取 ID。
+
+        兼容 livingmemory v2.0+ 的 HybridResult.doc_id（int）
+        与旧版的 dict["id"]。
+        """
+        if memory is None:
+            return None
+        # dataclass / 对象形式（v2.0+ HybridResult 使用 doc_id）
+        if hasattr(memory, "doc_id"):
+            return getattr(memory, "doc_id")
+        # dict 形式（旧版使用 id）
+        if isinstance(memory, dict):
+            return memory.get("id")
+        return None
+
     def get_memory_engine(self, refresh_if_invalid: bool = True, debug: bool = False):
         """获取 livingmemory 的 memory_engine；若缓存失效则自动重查。"""
         if not self.has_livingmemory:
@@ -580,15 +618,29 @@ class DependencyManager:
                 persona_hint = persona_id or persona_name or await self.resolve_persona_id(session_id)
                 search_query = f"daymind {date_str} {persona_hint or ''}".strip()
                 try:
-                    memories = await memory_engine.search_memory(search_query, session_id=session_id, top_k=50)
+                    # 兼容 livingmemory v2.0+：方法名 search_memories（复数），参数 k（非 top_k）
+                    # 旧版 livingmemory 使用 search_memory（单数）+ top_k
+                    if hasattr(memory_engine, "search_memories"):
+                        memories = await memory_engine.search_memories(
+                            search_query, k=50, session_id=session_id
+                        )
+                    elif hasattr(memory_engine, "search_memory"):
+                        memories = await memory_engine.search_memory(
+                            search_query, session_id=session_id, top_k=50
+                        )
+                    else:
+                        logger.warning("[DayMind] memory_engine 不支持 search_memories 或 search_memory，跳过回退搜索")
+                        memories = []
                 except Exception as e:
                     logger.warning(f"[DayMind] 回退搜索旧日记记忆失败: {e}")
                     memories = []
 
             diary_identity = f"daymind:{persona_name}:{date_str}" if persona_name else None
             for memory in memories:
-                metadata = memory.get("metadata") or {}
-                if not isinstance(metadata, dict):
+                # 兼容 livingmemory v2.0+ 的 HybridResult dataclass 与旧版的 dict 返回
+                metadata = self._extract_memory_metadata(memory)
+                memory_id = self._extract_memory_id(memory)
+                if metadata is None or memory_id is None:
                     continue
                 if metadata.get("type") != "diary":
                     continue
@@ -612,10 +664,10 @@ class DependencyManager:
                         "deleted_at": time.time(),
                     }
                 }
-                success = await memory_engine.update_memory(memory["id"], updates)
+                success = await memory_engine.update_memory(memory_id, updates)
                 if success:
                     result["updated"] += 1
-                    result["ids"].append(memory["id"])
+                    result["ids"].append(memory_id)
 
             logger.info(
                 f"[DayMind][debug] mark_daymind_diary_memories_deleted result: date={date_str}, "
