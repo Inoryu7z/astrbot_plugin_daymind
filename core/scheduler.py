@@ -248,6 +248,7 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                 "last_diary_failure_time": None,
                 "last_diary_cooldown_until": None,
                 "last_diary_failed_trigger_key": "",
+                "last_diary_memory_pending": None,
                 "last_dedupe_hit": False,
                 "last_dedupe_mode": "none",
                 "last_dedupe_source": None,
@@ -301,6 +302,7 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                 "last_diary_failure_time": state.get("last_diary_failure_time").isoformat() if state.get("last_diary_failure_time") else None,
                 "last_diary_cooldown_until": state.get("last_diary_cooldown_until").isoformat() if state.get("last_diary_cooldown_until") else None,
                 "last_diary_failed_trigger_key": str(state.get("last_diary_failed_trigger_key") or ""),
+                "last_diary_memory_pending": state.get("last_diary_memory_pending"),
                 "last_dedupe_hit": bool(state.get("last_dedupe_hit", False)),
                 "last_dedupe_mode": str(state.get("last_dedupe_mode") or "none"),
                 "last_dedupe_source": state.get("last_dedupe_source"),
@@ -359,6 +361,7 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                 except Exception:
                     item[field] = None
             item["last_diary_failed_trigger_key"] = str(state.get("last_diary_failed_trigger_key") or "")
+            item["last_diary_memory_pending"] = state.get("last_diary_memory_pending")
             item["last_dedupe_hit"] = bool(state.get("last_dedupe_hit", False))
             item["last_dedupe_mode"] = str(state.get("last_dedupe_mode") or "none")
             item["last_dedupe_source"] = state.get("last_dedupe_source")
@@ -873,6 +876,13 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                     target_total_minutes = diary_hour * 60 + diary_minute
                     trigger_key = f"{today_str}@{diary_hour:02d}:{diary_minute:02d}"
 
+                    # 补存上次未写入记忆系统的日记（本地已保存，仅记忆系统失败）
+                    if state.get("last_diary_memory_pending") and not self._is_persona_silent(persona_name):
+                        try:
+                            await self._retry_pending_memory_store(persona_name)
+                        except Exception as e:
+                            logger.warning(f"[Scheduler] 日记补存异常: persona={persona_name}, error={e}")
+
                     if auto_diary_enabled:
                         has_reached_target = current_total_minutes >= target_total_minutes
                         failed_trigger_key = str(state.get("last_diary_failed_trigger_key") or "")
@@ -894,7 +904,7 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                                 logger.info(f"[Scheduler][debug] 触发自动日记: persona={persona_name}, now={now.strftime('%H:%M:%S')}, target={diary_hour:02d}:{diary_minute:02d}, trigger_key={trigger_key}, overwrite_today={bool(self._persona_value(persona_name, 'allow_overwrite_today_diary', False))}")
                             result = await self._generate_and_push_diary(today_str, persona_name)
                             status = str((result or {}).get("status") or "")
-                            if status not in {"success", "exists"}:
+                            if status not in {"success", "exists", "memory_failed"}:
                                 failure_time = datetime.datetime.now()
                                 cooldown_seconds = self._get_diary_failure_cooldown_seconds(persona_name)
                                 state["last_diary_failure_time"] = failure_time
