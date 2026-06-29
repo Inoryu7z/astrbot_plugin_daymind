@@ -3,6 +3,7 @@
 负责检查和管理与其他插件的依赖关系
 """
 
+import asyncio
 import inspect
 import time
 from typing import Optional, Any
@@ -571,23 +572,90 @@ class DependencyManager:
                 f"persona_id={resolved_persona_id}, metadata_keys={sorted(final_metadata.keys())}"
             )
 
-            await memory_engine.add_memory(
-                content=content,
-                session_id=session_id,
-                persona_id=resolved_persona_id,
-                importance=0.7,
-                metadata=final_metadata,
-            )
-
-            logger.info(
-                f"[DayMind] 日记已存入记忆系统: {date_str}, "
-                f"session_id={session_id}, persona_id={resolved_persona_id}"
-            )
-            return True
+            # 对可重试错误（5xx/429/超时/连接错误）做指数退避重试，优先采用响应体里的 retry_after
+            max_retries = 3
+            base_delays = [5, 15, 45]
+            for attempt in range(max_retries + 1):
+                try:
+                    await memory_engine.add_memory(
+                        content=content,
+                        session_id=session_id,
+                        persona_id=resolved_persona_id,
+                        importance=0.7,
+                        metadata=final_metadata,
+                    )
+                    logger.info(
+                        f"[DayMind] 日记已存入记忆系统: {date_str}, "
+                        f"session_id={session_id}, persona_id={resolved_persona_id}"
+                        + (f", attempt={attempt + 1}" if attempt > 0 else "")
+                    )
+                    return True
+                except Exception as e:
+                    if attempt < max_retries and self._is_retryable_memory_error(e):
+                        delay = self._extract_retry_after(e) or base_delays[attempt]
+                        logger.warning(
+                            f"[DayMind] 存入 livingmemory 失败（可重试），{delay}s 后重试: "
+                            f"attempt={attempt + 1}/{max_retries + 1}, error={e}"
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        raise
 
         except Exception as e:
             logger.error(f"[DayMind] 存入 livingmemory 失败: {e}", exc_info=True)
             return False
+
+    def _is_retryable_memory_error(self, error: Exception) -> bool:
+        """判断记忆存储错误是否可重试（5xx/429/超时/连接错误）"""
+        try:
+            import openai
+            if isinstance(
+                error,
+                (
+                    openai.APITimeoutError,
+                    openai.APIConnectionError,
+                    openai.InternalServerError,
+                    openai.RateLimitError,
+                ),
+            ):
+                return True
+        except ImportError:
+            pass
+        error_str = str(error).lower()
+        return any(
+            marker in error_str
+            for marker in ("502", "503", "504", "429", "timeout", "timed out", "connection", "bad gateway", "service unavailable")
+        )
+
+    def _extract_retry_after(self, error: Exception) -> int | None:
+        """从错误响应中提取 retry_after（秒），优先响应体字段，其次 Retry-After 头"""
+        try:
+            response = getattr(error, "response", None)
+            if response is None:
+                return None
+            # 响应体里的 retry_after 字段（如 pie-xian 的 502 响应体）
+            body_json = getattr(response, "json", None)
+            if callable(body_json):
+                try:
+                    data = body_json()
+                    if isinstance(data, dict):
+                        raw = data.get("retry_after")
+                        if raw is not None:
+                            return max(1, int(float(raw)))
+                except Exception:
+                    pass
+            # Retry-After 头
+            headers = getattr(response, "headers", None)
+            if headers:
+                raw = headers.get("retry-after") or headers.get("Retry-After")
+                if raw:
+                    try:
+                        return max(1, int(float(raw)))
+                    except (ValueError, TypeError):
+                        pass
+        except Exception:
+            pass
+        return None
 
     async def mark_daymind_diary_memories_deleted(
         self,

@@ -750,8 +750,12 @@ class DayMindPlugin(Star, PersonaConfigMixin):
                 return
             yield event.plain_result("今日日记已生成，如需重新生成请开启 allow_overwrite_today_diary 调试开关")
             return
-        if result.get("status") == "success":
-            extra = f"\n已标记旧记忆为删除: {result.get('marked_deleted', 0)} 条" if result.get("marked_deleted") else ""
+        if result.get("status") in ("success", "memory_failed"):
+            extra = ""
+            if result.get("marked_deleted"):
+                extra += f"\n已标记旧记忆为删除: {result.get('marked_deleted', 0)} 条"
+            if result.get("status") == "memory_failed":
+                extra += "\n[提示] 日记已保存到本地，但写入记忆系统失败，将在稍后自动补存"
             prefix = ""
             if result.get("schedule_generated_now"):
                 data = result.get("schedule_data") or {}

@@ -275,11 +275,37 @@ class DiaryOperations:
                     metadata=memory_metadata,
                 )
                 if not stored:
-                    memory_status = "failed"
-                    self._record_diary_error(persona_name, "memory_store_failed", "日记写入记忆系统失败")
+                    # 本地已保存，仅记忆系统写入失败：标记为待补存，不重新生成日记
+                    memory_status = "memory_failed"
+                    self._record_diary_error(persona_name, "memory_store_failed", "日记写入记忆系统失败，已标记为待补存")
+                    state["diary_generated_today"] = True
+                    state["last_diary_date"] = date_str
+                    state["last_diary_memory_pending"] = {
+                        "date": date_str,
+                        "session_id": target,
+                        "persona_id": resolved_persona_id,
+                        "persona_name": persona_name,
+                        "memory_metadata": memory_metadata,
+                        "replaces_memory_ids": regeneration_info.get("ids", []),
+                        "next_retry_at": (datetime.datetime.now() + datetime.timedelta(seconds=60)).isoformat(),
+                        "retry_count": 0,
+                    }
+                    state["last_diary_failure_time"] = None
+                    state["last_diary_cooldown_until"] = None
+                    state["last_diary_failed_trigger_key"] = ""
                     await self._save_diary_meta(date_str, persona_name, memory_status=memory_status)
                     self._persist_state()
-                    return {"status": "failed", "message": "日记写入记忆系统失败"}
+                    logger.warning(
+                        f"[Scheduler] 日记已保存到本地但记忆系统写入失败，已标记待补存: "
+                        f"persona={persona_name}, date={date_str}"
+                    )
+                    # 本地日记已保存，执行保留期清理（与成功路径一致，不阻塞当前流程）
+                    try:
+                        await self._apply_diary_retention()
+                        await self._apply_dream_retention()
+                    except Exception as e:
+                        logger.debug(f"[Scheduler] memory_failed 后执行 retention 异常: {e}")
+                    return {"status": "memory_failed", "message": "日记已保存到本地但写入记忆系统失败，将在稍后自动补存", "content": diary_content, "date": date_str}
                 memory_status = "stored"
             else:
                 memory_status = "skipped"
@@ -302,6 +328,86 @@ class DiaryOperations:
             await self._save_diary_meta(date_str, persona_name, memory_status="failed")
             self._persist_state()
             return {"status": "failed", "message": str(e)}
+
+    async def _retry_pending_memory_store(self, persona_name: str) -> bool:
+        """补存上次未写入记忆系统的日记。成功或无可补存返回 True，仍失败返回 False。"""
+        state = self._ensure_persona_state(persona_name)
+        pending = state.get("last_diary_memory_pending")
+        if not pending:
+            return True
+
+        date_str = pending.get("date")
+        if not date_str:
+            state["last_diary_memory_pending"] = None
+            self._persist_state()
+            return True
+
+        # 未到重试时间则跳过
+        next_retry = pending.get("next_retry_at")
+        if next_retry:
+            try:
+                next_dt = datetime.datetime.fromisoformat(next_retry)
+                if datetime.datetime.now() < next_dt:
+                    return False
+            except Exception:
+                pass
+
+        # 从本地读取日记内容
+        canonical_persona = self._canonical_persona_name(persona_name) or persona_name
+        diary_file = self._diary_text_path(date_str, canonical_persona)
+        if not diary_file.exists():
+            logger.warning(
+                f"[Scheduler] 补存日记失败：本地日记文件不存在，清除 pending: "
+                f"persona={persona_name}, date={date_str}"
+            )
+            state["last_diary_memory_pending"] = None
+            self._persist_state()
+            return True
+        diary_content = diary_file.read_text(encoding="utf-8").strip()
+        if not diary_content:
+            logger.warning(
+                f"[Scheduler] 补存日记失败：本地日记内容为空，清除 pending: "
+                f"persona={persona_name}, date={date_str}"
+            )
+            state["last_diary_memory_pending"] = None
+            self._persist_state()
+            return True
+
+        memory_metadata = pending.get("memory_metadata") or {}
+        stored = await self.dependency_manager.store_to_memory(
+            date_str=date_str,
+            content=diary_content,
+            session_id=pending.get("session_id"),
+            persona_id=pending.get("persona_id"),
+            metadata=memory_metadata,
+        )
+        if stored:
+            logger.info(f"[Scheduler] 日记补存成功: persona={persona_name}, date={date_str}")
+            state["last_diary_memory_pending"] = None
+            state["last_diary_failure_time"] = None
+            state["last_diary_cooldown_until"] = None
+            state["last_diary_failed_trigger_key"] = ""
+            self._clear_diary_error(persona_name)
+            await self._save_diary_meta(date_str, persona_name, memory_status="stored")
+            self._persist_state()
+            # 补存成功后执行保留期清理（首次 memory_failed 时可能已执行，此处幂等不阻塞）
+            try:
+                await self._apply_diary_retention()
+                await self._apply_dream_retention()
+            except Exception as e:
+                logger.debug(f"[Scheduler] 补存后执行 retention 异常: {e}")
+            return True
+
+        retry_count = int(pending.get("retry_count", 0)) + 1
+        pending["retry_count"] = retry_count
+        pending["next_retry_at"] = (datetime.datetime.now() + datetime.timedelta(seconds=60)).isoformat()
+        state["last_diary_memory_pending"] = pending
+        self._persist_state()
+        logger.warning(
+            f"[Scheduler] 日记补存失败，将在 60s 后重试: "
+            f"persona={persona_name}, date={date_str}, retry_count={retry_count}"
+        )
+        return False
 
     def _build_diary_memory_metadata(self, date_str: str, persona_name: str) -> dict:
         persona_name = self._canonical_persona_name(persona_name) or persona_name

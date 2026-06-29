@@ -1,3 +1,17 @@
+### v1.8.2
+
+**🛡️ 日记存入记忆系统增加重试与补存机制**
+
+* 修复 `store_to_memory` 在 embedding API 偶发 502/超时/连接错误时直接判失败的问题：新增 3 次指数退避重试（5s/15s/45s），优先采用响应体里的 `retry_after` 字段
+* 新增可重试错误识别（`openai.InternalServerError`/`APITimeoutError`/`APIConnectionError`/`RateLimitError` 及 5xx/429 字符串兜底）
+* 新增 `memory_failed` 状态：本地已保存但记忆系统写入失败时，不再标记整篇日记为 failed，而是标记 `diary_generated_today=True` 并记录待补存信息，避免冷却结束后重新生成日记浪费 LLM tokens
+* 新增 `_retry_pending_memory_store` 补存方法：从本地读取日记内容，用同一 version 重新写入记忆系统，每 60s 自动重试直到成功
+* 主循环每轮检查待补存状态，非静默时段触发补存；`memory_failed` 不进入 600s 冷却
+* 跨天 reset 不清除待补存信息，确保昨天的失败日记也能补存
+* 手动触发日记遇 `memory_failed` 时仍展示日记内容并提示将自动补存
+
+---
+
 ### v1.8.1
 
 **🐛 适配 LivingMemory v2.0+ 新版 API**
