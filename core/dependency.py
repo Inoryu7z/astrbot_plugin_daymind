@@ -24,6 +24,9 @@ class DependencyManager:
         self.context = context
         self._has_life_scheduler: Optional[bool] = None
         self._has_livingmemory: Optional[bool] = None
+        # 用于 livingmemory 状态变化判断，避免每次实时检查时重复打日志
+        # None=未初始化, True=上次可用, False=上次不可用
+        self._last_livingmemory_available: Optional[bool] = None
         self._life_scheduler_instance = None
         self._livingmemory_instance = None
 
@@ -57,8 +60,26 @@ class DependencyManager:
         if instance is None:
             return False
         initializer = getattr(instance, "initializer", None)
-        memory_engine = getattr(initializer, "memory_engine", None) if initializer else None
-        return memory_engine is not None
+        if initializer is None:
+            return False
+        # 必须已完成初始化（未完成 / 已失败 / 还在重试都不算可用）
+        if not getattr(initializer, "is_initialized", False):
+            return False
+        memory_engine = getattr(initializer, "memory_engine", None)
+        if memory_engine is None:
+            return False
+        # 进一步校验底层资源仍然有效，避免绑到已 terminate 但引用还在的实例
+        # livingmemory.terminate() 后 memory_engine/db_connection 属性仍存在但已 close
+        db_connection = getattr(memory_engine, "db_connection", None)
+        if db_connection is None:
+            return False
+        faiss_db = getattr(memory_engine, "faiss_db", None)
+        if faiss_db is None:
+            return False
+        # FaissVecDB.close() 会把 engine 置 None
+        if getattr(faiss_db, "engine", None) is None:
+            return False
+        return True
 
     def check_dependencies(self) -> dict:
         """检查依赖插件状态"""
@@ -97,9 +118,13 @@ class DependencyManager:
                     if valid_candidate is not None:
                         result["livingmemory"] = True
                         self._livingmemory_instance = valid_candidate
-                        logger.info("[DayMind] 检测到 livingmemory 插件，日记将存入记忆系统")
+                        # 只在从"无"变"有"时打 info，避免 has_livingmemory 每次实时检查时刷屏
+                        if not self._last_livingmemory_available:
+                            logger.info("[DayMind] 检测到 livingmemory 插件，日记将存入记忆系统")
                     elif star_instances:
-                        logger.warning("[DayMind] 检测到 livingmemory 插件但未找到可用 memory_engine，已跳过绑定")
+                        # 只在从"有"变"无"时打 warning，避免重复刷屏
+                        if self._last_livingmemory_available:
+                            logger.warning("[DayMind] 检测到 livingmemory 插件但未找到可用 memory_engine，已跳过绑定")
 
             bound_name = None
             if preferred_valid_instance is not None:
@@ -130,8 +155,12 @@ class DependencyManager:
             if not result["life_scheduler"]:
                 logger.info("[DayMind] 未检测到 Dayflow 日程插件，将仅基于对话进行思考")
 
-            if not result["livingmemory"]:
+            if not result["livingmemory"] and self._last_livingmemory_available is not False:
+                # 只在首次或从"有"变"无"时打，避免每次实时检查时刷屏
                 logger.info("[DayMind] 未检测到 livingmemory 插件，日记将仅本地存储")
+
+            # 记录本次探测结果，供下次状态变化判断使用
+            self._last_livingmemory_available = result["livingmemory"]
 
         except Exception as e:
             logger.warning(f"[DayMind] 检查依赖插件时出错: {e}")
@@ -147,9 +176,11 @@ class DependencyManager:
 
     @property
     def has_livingmemory(self) -> bool:
-        """是否存在 livingmemory 插件"""
-        if self._has_livingmemory is None:
-            self.check_dependencies()
+        """是否存在 livingmemory 插件（每次实时检查，避免缓存失效导致日记静默跳过）"""
+        # 不能永久缓存：livingmemory 是非阻塞后台初始化的，
+        # daymind 启动时可能 livingmemory 还没初始化完，缓存 False 后就再也不重新检查了。
+        # 同样 livingmemory reload/terminate 后旧实例会失效，也需要重新探测。
+        self.check_dependencies()
         return bool(self._has_livingmemory)
 
     def _is_missing_today_schedule(self, data: dict | None) -> bool:
@@ -417,7 +448,15 @@ class DependencyManager:
         return None
 
     def get_memory_engine(self, refresh_if_invalid: bool = True, debug: bool = False):
-        """获取 livingmemory 的 memory_engine；若缓存失效则自动重查。"""
+        """获取 livingmemory 的 memory_engine；每次都重新校验实例有效性。
+
+        关键修复：livingmemory terminate/reload 后旧实例引用仍在内存中，
+        但底层 db_connection/faiss_db.engine 已 close。仅靠属性非 None 判定可用
+        会让 daymind 一直使用已关闭的 engine，导致日记补存无限失败。
+        现在通过 has_livingmemory（内部走 _is_valid_livingmemory_instance 严格校验）
+        每次重新探测，确保拿到的是真正可用的实例。
+        """
+        # has_livingmemory 内部会调用 check_dependencies 重新校验实例有效性
         if not self.has_livingmemory:
             if debug:
                 logger.info("[DayMind][debug] get_memory_engine: has_livingmemory=False")
@@ -603,6 +642,12 @@ class DependencyManager:
 
         except Exception as e:
             logger.error(f"[DayMind] 存入 livingmemory 失败: {e}", exc_info=True)
+            # 失败后清空 livingmemory 实例缓存，下次调用 get_memory_engine
+            # 会重新走 check_dependencies 拿最新实例。
+            # 这是为了应对 livingmemory reload/terminate 后旧实例仍然存在
+            # 但底层连接已关闭的情况，避免后续重试继续使用已失效的 engine。
+            self._livingmemory_instance = None
+            self._has_livingmemory = None
             return False
 
     def _is_retryable_memory_error(self, error: Exception) -> bool:
@@ -748,5 +793,8 @@ class DependencyManager:
                 )
         except Exception as e:
             logger.error(f"[DayMind] 标记旧日记记忆删除失败: {e}", exc_info=True)
+            # 同 store_to_memory：失败后清缓存，下次拿最新实例
+            self._livingmemory_instance = None
+            self._has_livingmemory = None
 
         return result
