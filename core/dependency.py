@@ -27,6 +27,8 @@ class DependencyManager:
         # 用于 livingmemory 状态变化判断，避免每次实时检查时重复打日志
         # None=未初始化, True=上次可用, False=上次不可用
         self._last_livingmemory_available: Optional[bool] = None
+        # 用于日程插件状态变化判断（存储上次绑定的插件名），避免实时检查时刷屏
+        self._last_life_scheduler_bound: Optional[str] = None
         self._life_scheduler_instance = None
         self._livingmemory_instance = None
 
@@ -68,16 +70,17 @@ class DependencyManager:
         memory_engine = getattr(initializer, "memory_engine", None)
         if memory_engine is None:
             return False
-        # 进一步校验底层资源仍然有效，避免绑到已 terminate 但引用还在的实例
-        # livingmemory.terminate() 后 memory_engine/db_connection 属性仍存在但已 close
-        db_connection = getattr(memory_engine, "db_connection", None)
-        if db_connection is None:
-            return False
+        # 校验底层资源仍然有效，避免绑到已 terminate 但引用还在的实例
+        # livingmemory.terminate() → memory_engine.close() 不会把 db_connection 置 None，
+        # 但 FaissVecDB.close() → DocumentStorage.close() 会把 engine 置 None。
+        # 所以真正能识别"已关闭"的标志是 faiss_db.document_storage.engine。
         faiss_db = getattr(memory_engine, "faiss_db", None)
         if faiss_db is None:
             return False
-        # FaissVecDB.close() 会把 engine 置 None
-        if getattr(faiss_db, "engine", None) is None:
+        document_storage = getattr(faiss_db, "document_storage", None)
+        if document_storage is None:
+            return False
+        if getattr(document_storage, "engine", None) is None:
             return False
         return True
 
@@ -137,7 +140,12 @@ class DependencyManager:
                 bound_name = self.LEGACY_DAYFLOW_PLUGIN_NAME
 
             if bound_name:
-                logger.info(f"[DayMind] 检测到日程插件 {bound_name}，将获取日程数据")
+                # 只在状态变化时打 info，避免 has_livingmemory 每次实时检查时刷屏
+                if self._last_life_scheduler_bound != bound_name:
+                    logger.info(f"[DayMind] 检测到日程插件 {bound_name}，将获取日程数据")
+            elif self._last_life_scheduler_bound:
+                # 从"有"变"无"
+                logger.info("[DayMind] 未检测到可用日程插件，将仅基于对话进行思考")
 
             if preferred_incomplete_detected and preferred_valid_instance is None and legacy_valid_instance is None:
                 logger.warning(f"[DayMind] 检测到 {self.PREFERRED_DAYFLOW_PLUGIN_NAME} 但实例接口不完整，已跳过绑定")
@@ -152,15 +160,13 @@ class DependencyManager:
             self._has_life_scheduler = result["life_scheduler"]
             self._has_livingmemory = result["livingmemory"]
 
-            if not result["life_scheduler"]:
-                logger.info("[DayMind] 未检测到 Dayflow 日程插件，将仅基于对话进行思考")
-
             if not result["livingmemory"] and self._last_livingmemory_available is not False:
                 # 只在首次或从"有"变"无"时打，避免每次实时检查时刷屏
                 logger.info("[DayMind] 未检测到 livingmemory 插件，日记将仅本地存储")
 
             # 记录本次探测结果，供下次状态变化判断使用
             self._last_livingmemory_available = result["livingmemory"]
+            self._last_life_scheduler_bound = bound_name if result["life_scheduler"] else None
 
         except Exception as e:
             logger.warning(f"[DayMind] 检查依赖插件时出错: {e}")
