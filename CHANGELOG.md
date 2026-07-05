@@ -1,3 +1,14 @@
+### v1.8.3
+
+**🐛 修复日记存不进 livingmemory 的两类缓存失效问题**
+
+* 修复 Server A 静默跳过问题：`has_livingmemory` 之前永久缓存首次探测结果，若 daymind 启动时 livingmemory 还在后台初始化（`memory_engine` 尚为 None），会被永久缓存为 False，之后即使 livingmemory 初始化完成也再也不会重新检查，日记直接 `memory_status="skipped"` 跳过存储且无任何 warning。现改为每次访问都实时 `check_dependencies()` 重新探测。
+* 修复 Server B retry 18 次仍失败问题：`get_memory_engine` 之前仅靠 `memory_engine is not None` 判定实例可用，但 livingmemory `terminate()`/reload 后旧实例引用仍在内存中、底层 `db_connection` 和 `faiss_db.engine` 已 close，导致 daymind 一直拿到已关闭的 engine 反复重试。`_is_valid_livingmemory_instance` 现增加 `initializer.is_initialized` + `db_connection` + `faiss_db.engine` 三层有效性校验。
+* `store_to_memory` / `mark_daymind_diary_memories_deleted` 失败后主动清空 `_livingmemory_instance` 和 `_has_livingmemory` 缓存，确保 60s 后的补存重试能拿到最新实例而非继续使用已失效的 engine。
+* `check_dependencies` 新增 `_last_livingmemory_available` 状态跟踪，仅在状态变化时打 info/warning 日志，避免 `has_livingmemory` 改为实时检查后日志刷屏。
+
+---
+
 ### v1.8.2
 
 **🛡️ 日记存入记忆系统增加重试与补存机制**
