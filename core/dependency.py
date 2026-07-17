@@ -626,7 +626,7 @@ class DependencyManager:
                         content=content,
                         session_id=session_id,
                         persona_id=resolved_persona_id,
-                        importance=0.7,
+                        importance=0.4,
                         metadata=final_metadata,
                     )
                     logger.info(

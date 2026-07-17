@@ -646,6 +646,14 @@ class ReflectionGenerator(PersonaConfigMixin):
             completion_text = getattr(response, "completion_text", None)
             if completion_text and completion_text.strip():
                 return completion_text.strip(), response
+            # 修复：当传入 tools 且 LLM 选择调用 Tool 时，completion_text 常为空，这是预期行为而非错误。
+            # 若此时打 ERROR 日志会污染日志且误导排查方向，降级为 INFO。
+            tools_call_names = getattr(response, "tools_call_name", None) or []
+            if tools is not None and tools_call_names:
+                logger.info(
+                    f"[ReflectionGenerator] 思考命中 Tool 调用（completion_text 为空属预期）: provider={provider_id}, tools={tools_call_names}"
+                )
+                return None, response
             logger.error(f"[ReflectionGenerator] 思考失败[empty_completion]: provider={provider_id} completion_text为空")
             return None, response
         except Exception as e:
