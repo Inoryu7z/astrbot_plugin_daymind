@@ -1,3 +1,14 @@
+### v1.8.4
+
+**🐛 修复主动对话从未生效 + 下调日记重要性指数**
+
+* 修复 v1.8.0 引入的"思考后主动对话"功能从未触发的严重 bug：`_do_reflection` 中主动对话 Tool 调用检测被嵌套在 `if result:` 块内部，而 LLM 调用 Tool 时 `completion_text` 常为空导致 `result=None`，整个 Tool 检测被跳过，主动对话永远无法触发。现改为独立检测块，无论是否生成文本都执行检测，并新增"Tool 被调用但未生成文本"的成功返回路径，避免被误判为失败触发冷却。
+* 修复 `_run_reflection_generation_with_retries` 在 LLM 调用 Tool 后仍盲目重试的问题：检测到 Tool 调用后立即返回不再重试，避免浪费 tokens 与重复触发冷却。
+* 优化 `_call_llm` 日志：当传入 tools 且 LLM 选择调用 Tool 时，`completion_text` 为空属预期行为，日志从 ERROR 降级为 INFO，避免"思考失败[empty_completion]"刷屏并误导排查方向。
+* 下调日记存入 livingmemory 的重要性指数：`importance` 从硬编码 0.7 降为 0.4（低于 livingmemory 默认值 0.5），原因：日记来源是完全随机生成的虚拟内容，而与用户的对话是绝对真实的，过高的日记重要性会导致召回时虚拟日记污染真实对话记忆。
+
+---
+
 ### v1.8.3
 
 **🐛 修复日记存不进 livingmemory 的两类缓存失效问题**

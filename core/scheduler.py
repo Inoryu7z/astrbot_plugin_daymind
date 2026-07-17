@@ -725,6 +725,18 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                 if attempt > 0:
                     logger.info(f"[Scheduler] 思考生成重试成功: persona={persona_name}, attempt={attempt + 1}")
                 return last_result, last_raw_response
+            # 修复：LLM 调用主动对话 Tool 时 completion_text 常为空，导致 last_result=None。
+            # 此时 Tool 调用本身就是有效输出，不应重试（重试只会浪费 tokens 且可能让 LLM 反复调 Tool）。
+            if (
+                tools
+                and last_raw_response
+                and self.proactive_chat_manager
+                and self.proactive_chat_manager.check_tool_called(last_raw_response)
+            ):
+                if attempt > 0:
+                    logger.info(f"[Scheduler] 思考生成重试后命中 Tool 调用: persona={persona_name}, attempt={attempt + 1}")
+                logger.info(f"[Scheduler] 思考未生成文本但检测到主动对话 Tool 调用，不再重试: persona={persona_name}, attempt={attempt + 1}/{max_retries + 1}")
+                return last_result, last_raw_response
             if attempt < max_retries:
                 logger.warning(f"[Scheduler] 思考生成失败，准备重试: persona={persona_name}, attempt={attempt + 1}/{max_retries + 1}, delay={retry_delay}s")
                 if retry_delay > 0:
@@ -1342,6 +1354,26 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                 resolved_desc=resolved_desc,
                 tools=tools,
             )
+            # 主动对话 Tool 调用检测：无论是否生成文本都需检测
+            # 修复：之前此检测嵌套在 `if result:` 内，LLM 调用 Tool 时常返回空 completion_text，
+            # 导致 result=None 时检测被跳过，主动对话永远无法触发。
+            proactive_chat_triggered = False
+            if tools and raw_response and self.proactive_chat_manager:
+                try:
+                    if self.proactive_chat_manager.check_tool_called(raw_response):
+                        push_target = self.proactive_chat_manager.get_push_target(persona_name)
+                        if push_target:
+                            proactive_result = await self.proactive_chat_manager.execute_proactive_chat(
+                                persona_name, push_target, state
+                            )
+                            logger.info(f"[Scheduler] 主动对话结果: persona={persona_name}, status={proactive_result.get('status')}, message={proactive_result.get('message')}")
+                            self._persist_state()
+                            proactive_chat_triggered = True
+                        else:
+                            logger.debug(f"[Scheduler] 主动对话 Tool 被调用但未配置推送目标: persona={persona_name}")
+                except Exception as e:
+                    logger.warning(f"[Scheduler] 主动对话执行失败: persona={persona_name}, error={e}")
+
             if result:
                 if self._is_duplicate_reflection(persona_name, result):
                     state["last_reflection_time"] = now
@@ -1382,22 +1414,20 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
                 self._persist_state()
                 logger.info(f"[Scheduler] 思考完成: persona={persona_name}, result={result}")
 
-                if tools and raw_response and self.proactive_chat_manager:
-                    try:
-                        if self.proactive_chat_manager.check_tool_called(raw_response):
-                            push_target = self.proactive_chat_manager.get_push_target(persona_name)
-                            if push_target:
-                                proactive_result = await self.proactive_chat_manager.execute_proactive_chat(
-                                    persona_name, push_target, state
-                                )
-                                logger.info(f"[Scheduler] 主动对话结果: persona={persona_name}, status={proactive_result.get('status')}, message={proactive_result.get('message')}")
-                                self._persist_state()
-                            else:
-                                logger.debug(f"[Scheduler] 主动对话 Tool 被调用但未配置推送目标: persona={persona_name}")
-                    except Exception as e:
-                        logger.warning(f"[Scheduler] 主动对话执行失败: persona={persona_name}, error={e}")
-
                 return {"status": "success", "text": result, "mood": self.get_current_mood_for_persona(persona_name) if mood_result else None}
+
+            # Tool 被调用但未生成文本：不视为失败（Tool 调用本身就是有效输出）
+            if proactive_chat_triggered:
+                state["last_reflection_time"] = now
+                if not manual:
+                    state["last_auto_reflection_time"] = now
+                state["last_reflection_failure_time"] = None
+                state["last_reflection_cooldown_until"] = None
+                state["consecutive_failures"] = 0
+                self._clear_reflection_error(persona_name)
+                self._persist_state()
+                logger.info(f"[Scheduler] 思考未生成文本但触发了主动对话，不计为失败: persona={persona_name}")
+                return {"status": "success", "text": "", "mood": None, "proactive_chat": True}
 
             state["consecutive_failures"] = self._safe_non_negative_int(state.get("consecutive_failures", 0), default=0) + 1
             state["last_reflection_failure_time"] = now
