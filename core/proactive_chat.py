@@ -171,6 +171,14 @@ class ProactiveChatManager(PersonaConfigMixin):
             logger.error(f"[ProactiveChat] {result['message']}")
             return result
 
+        # [Patch] 手动触发 OnLLMResponseEvent 钩子
+        # daymind 主动对话绕过标准 pipeline，tts_plus 等插件依赖此钩子设置标志位，
+        # 否则 on_decorating_result 不会执行 TTS 语音合成。
+        # 注意：必须在检查 completion_text 之前触发，因为 tts_plus.on_llm_response
+        # 会修改 resp.completion_text（去掉 style_tags），后续代码需要用修改后的文本。
+        if response is not None:
+            await self._trigger_llm_response_hooks(push_target, response)
+
         if not response or not response.completion_text or not response.completion_text.strip():
             result["message"] = "对话模型返回空内容"
             logger.warning(f"[ProactiveChat] {result['message']}")
@@ -182,6 +190,11 @@ class ProactiveChatManager(PersonaConfigMixin):
         if not send_ok:
             result["message"] = f"消息发送失败: {push_target}"
             return result
+
+        # [Patch] 手动触发 OnAfterMessageSentEvent 钩子
+        # context.send_message 本身不触发此钩子（由 respond pipeline 触发），
+        # 需手动触发以让 livingmemory 助手响应捕获、其他统计/日志插件正常工作。
+        await self._trigger_after_message_sent_hooks(push_target)
 
         await self._save_to_conversation_history(push_target, message_text, conversation_context)
 
@@ -486,3 +499,121 @@ class ProactiveChatManager(PersonaConfigMixin):
         if not platform_id or not target_id:
             return None
         return platform_id, msg_type, target_id
+
+    def _build_synthetic_event(self, session_id: str, components: list | None = None):
+        """构造合成的 AstrMessageEvent，用于手动触发钩子。
+
+        daymind 主动对话绕过了标准 pipeline（直接调用 context.llm_generate
+        和 context.send_message），导致 OnLLMResponseEvent 和
+        OnAfterMessageSentEvent 等钩子不触发。此方法构造一个合成 event，
+        供 _trigger_llm_response_hooks / _trigger_after_message_sent_hooks 使用。
+        """
+        try:
+            from astrbot.core.platform.astrbot_message import AstrBotMessage, Group, MessageMember
+            from astrbot.core.platform.message_type import MessageType
+        except ImportError:
+            return None
+
+        parsed = self._parse_session_id(session_id)
+        if not parsed:
+            return None
+
+        platform_name, msg_type_str, target_id = parsed
+
+        platform_inst = None
+        for p in self.context.platform_manager.platform_insts:
+            if p.meta().id == platform_name:
+                platform_inst = p
+                break
+        if not platform_inst:
+            for p in self.context.platform_manager.platform_insts:
+                if p.meta().name == platform_name:
+                    platform_inst = p
+                    break
+        if not platform_inst:
+            return None
+
+        try:
+            from astrbot.api.event import AstrMessageEvent as EventCls
+        except ImportError:
+            try:
+                from astrbot.core.platform.astr_message_event import AstrMessageEvent as EventCls
+            except ImportError:
+                return None
+
+        message_obj = AstrBotMessage()
+        if "Friend" in msg_type_str:
+            message_obj.type = MessageType.FRIEND_MESSAGE
+        elif "Group" in msg_type_str:
+            message_obj.type = MessageType.GROUP_MESSAGE
+            message_obj.group = Group(group_id=target_id)
+        else:
+            message_obj.type = MessageType.FRIEND_MESSAGE
+        message_obj.session_id = target_id
+        message_obj.message = components or []
+        message_obj.self_id = "bot"
+        message_obj.sender = MessageMember(user_id=target_id)
+        message_obj.message_str = ""
+        message_obj.raw_message = None
+        message_obj.message_id = ""
+
+        event = EventCls(
+            message_str="",
+            message_obj=message_obj,
+            platform_meta=platform_inst.meta(),
+            session_id=target_id,
+        )
+
+        return event
+
+    async def _trigger_llm_response_hooks(self, session_id: str, response) -> None:
+        """[Patch] 手动触发 OnLLMResponseEvent 钩子。
+
+        daymind 主动对话直接调用 context.llm_generate，绕过了标准 pipeline，
+        导致 on_llm_response 钩子不触发。tts_plus 等插件依赖此钩子：
+        - tts_plus.on_llm_response 从响应中提取 style_tags 并设置标志位
+        - tts_plus.on_decorating_result 检查标志位才执行 TTS 语音合成
+
+        不触发此钩子 → 标志位未设置 → on_decorating_result 直接 return →
+        TTS 不执行 → 用户只收到文本没有语音。
+        """
+        try:
+            from astrbot.core.star.star_handler import EventType, star_handlers_registry
+        except ImportError:
+            return
+
+        event = self._build_synthetic_event(session_id)
+        if event is None:
+            return
+
+        handlers = star_handlers_registry.get_handlers_by_event_type(EventType.OnLLMResponseEvent)
+        for handler in handlers:
+            try:
+                await handler.handler(event, response)
+            except Exception as e:
+                logger.debug(f"[ProactiveChat] on_llm_response 钩子执行失败: {handler.handler_full_name}, error={e}")
+
+    async def _trigger_after_message_sent_hooks(self, session_id: str) -> None:
+        """[Patch] 手动触发 OnAfterMessageSentEvent 钩子。
+
+        daymind 主动对话直接调用 context.send_message，而 send_message
+        本身不触发 after_message_sent 钩子（该钩子由 respond pipeline 在
+        stage.py:315 触发）。依赖此钩子的插件会失效：
+        - livingmemory 的助手响应捕获与记忆反思
+        - 其他统计/日志/审计插件
+        """
+        try:
+            from astrbot.core.star.star_handler import EventType, star_handlers_registry
+        except ImportError:
+            return
+
+        event = self._build_synthetic_event(session_id)
+        if event is None:
+            return
+
+        handlers = star_handlers_registry.get_handlers_by_event_type(EventType.OnAfterMessageSentEvent)
+        for handler in handlers:
+            try:
+                await handler.handler(event)
+            except Exception as e:
+                logger.debug(f"[ProactiveChat] after_message_sent 钩子执行失败: {handler.handler_full_name}, error={e}")
