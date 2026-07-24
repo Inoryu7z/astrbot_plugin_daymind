@@ -110,7 +110,7 @@ class DreamOperations:
                 await self._append_dream_history(now.strftime("%Y-%m-%d"), persona_name, result)
 
                 self._persist_state()
-                logger.info(f"[Scheduler] 梦境完成: persona={persona_name}, dream_count={dream_state['dream_count']}, result={result[:80]}...")
+                logger.info(f"[Scheduler] 梦境完成: persona={persona_name}, count={dream_state['dream_count']}, preview={result[:40]}")
                 return {"status": "success", "text": result}
 
             logger.warning(f"[Scheduler] 梦境生成失败: persona={persona_name}")
