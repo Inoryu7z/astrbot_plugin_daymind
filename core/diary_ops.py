@@ -214,7 +214,7 @@ class DiaryOperations:
         try:
             state["state_date"] = date_str
             if state.get("diary_generated_today") and not bool(self._persona_value(persona_name, "allow_overwrite_today_diary", False)):
-                logger.info(f"[Scheduler] 跳过日记生成：{date_str} persona={persona_name} 今日日记已生成")
+                logger.debug(f"[Scheduler] 跳过日记生成：{date_str} persona={persona_name} 今日日记已生成")
                 self._persist_state()
                 return {"status": "exists"}
             target = primary_target or await self.select_reflection_session(persona_name)
@@ -296,8 +296,7 @@ class DiaryOperations:
                     await self._save_diary_meta(date_str, persona_name, memory_status=memory_status)
                     self._persist_state()
                     logger.warning(
-                        f"[Scheduler] 日记已保存到本地但记忆系统写入失败，已标记待补存: "
-                        f"persona={persona_name}, date={date_str}"
+                        f"[Scheduler] 日记已本地保存但记忆系统写入失败，标记待补存: persona={persona_name}, date={date_str}"
                     )
                     # 本地日记已保存，执行保留期清理（与成功路径一致，不阻塞当前流程）
                     try:
@@ -357,8 +356,7 @@ class DiaryOperations:
         diary_file = self._diary_text_path(date_str, canonical_persona)
         if not diary_file.exists():
             logger.warning(
-                f"[Scheduler] 补存日记失败：本地日记文件不存在，清除 pending: "
-                f"persona={persona_name}, date={date_str}"
+                f"[Scheduler] 补存失败：本地日记不存在，清除 pending: persona={persona_name}, date={date_str}"
             )
             state["last_diary_memory_pending"] = None
             self._persist_state()
@@ -366,8 +364,7 @@ class DiaryOperations:
         diary_content = diary_file.read_text(encoding="utf-8").strip()
         if not diary_content:
             logger.warning(
-                f"[Scheduler] 补存日记失败：本地日记内容为空，清除 pending: "
-                f"persona={persona_name}, date={date_str}"
+                f"[Scheduler] 补存失败：本地日记内容为空，清除 pending: persona={persona_name}, date={date_str}"
             )
             state["last_diary_memory_pending"] = None
             self._persist_state()
@@ -404,8 +401,7 @@ class DiaryOperations:
         state["last_diary_memory_pending"] = pending
         self._persist_state()
         logger.warning(
-            f"[Scheduler] 日记补存失败，将在 60s 后重试: "
-            f"persona={persona_name}, date={date_str}, retry_count={retry_count}"
+            f"[Scheduler] 补存失败 60s 后重试: persona={persona_name}, date={date_str}, retry_count={retry_count}"
         )
         return False
 

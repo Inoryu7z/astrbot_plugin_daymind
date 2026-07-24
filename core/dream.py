@@ -218,22 +218,22 @@ class DreamGenerator(PersonaConfigMixin):
             if not provider_id:
                 provider_id = await self._get_default_provider_id()
             if not provider_id:
-                logger.error("[DreamGenerator] 梦境失败[provider_missing]: 没有配置梦境/思考模型提供商")
+                logger.error("[DreamGenerator] 无可用梦境/思考模型提供商")
                 return None
             response = await self.context.llm_generate(
                 chat_provider_id=provider_id,
                 prompt=prompt
             )
             if response is None:
-                logger.error(f"[DreamGenerator] 梦境失败[empty_response]: provider={provider_id} 返回空响应对象")
+                logger.error(f"[DreamGenerator] provider={provider_id} 返回空响应")
                 return None
             completion_text = getattr(response, "completion_text", None)
             if completion_text and completion_text.strip():
                 return completion_text.strip()
-            logger.error(f"[DreamGenerator] 梦境失败[empty_completion]: provider={provider_id} completion_text为空")
+            logger.error(f"[DreamGenerator] provider={provider_id} completion_text 为空")
             return None
         except Exception as e:
-            logger.error(f"[DreamGenerator] 梦境失败[provider_exception]: provider={provider_id}, error={e}")
+            logger.error(f"[DreamGenerator] provider={provider_id} 调用异常: {e}")
             return None
 
     async def _get_default_provider_id(self) -> Optional[str]:

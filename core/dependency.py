@@ -218,7 +218,7 @@ class DependencyManager:
             self.check_dependencies()
         if not self.has_life_scheduler:
             if debug:
-                logger.info("[DayMind][debug] get_schedule_data: 未检测到日程插件")
+                logger.debug("[DayMind] get_schedule_data: 未检测到日程插件")
             return {}
 
         try:
@@ -231,9 +231,9 @@ class DependencyManager:
                 data = await target.get_life_context(session_id=session_id, persona_name=persona_name, target_date=target_date)
                 data = data if isinstance(data, dict) else {}
                 if debug:
-                    logger.info(
-                        f"[DayMind][debug] get_schedule_data success: session={session_id}, persona={persona_name}, target_date={target_date or ''}, "
-                        f"outfit={str(data.get('outfit', ''))[:120]}, schedule={str(data.get('schedule', ''))[:300]}"
+                    logger.debug(
+                        f"[DayMind] get_schedule_data success: persona={persona_name}, date={target_date or ''}, "
+                        f"outfit={str(data.get('outfit', ''))[:80]}, schedule={str(data.get('schedule', ''))[:200]}"
                     )
                 return data
 
@@ -242,14 +242,13 @@ class DependencyManager:
                 data = await service.get_life_context(session_id=session_id, persona_name=persona_name, target_date=target_date)
                 data = data if isinstance(data, dict) else {}
                 if debug:
-                    logger.info(
-                        f"[DayMind][debug] get_schedule_data success(service): session={session_id}, persona={persona_name}, target_date={target_date or ''}, "
-                        f"outfit={str(data.get('outfit', ''))[:120]}, schedule={str(data.get('schedule', ''))[:300]}"
+                    logger.debug(
+                        f"[DayMind] get_schedule_data success(service): persona={persona_name}, date={target_date or ''}"
                     )
                 return data
 
             if debug:
-                logger.info("[DayMind][debug] get_schedule_data: 日程插件存在但未找到 get_life_context 接口")
+                logger.debug("[DayMind] get_schedule_data: 日程插件存在但未找到 get_life_context 接口")
         except Exception as e:
             logger.warning(f"[DayMind] 获取日程数据失败: {e}")
 
@@ -324,9 +323,8 @@ class DependencyManager:
             if effective_target_date and hasattr(service, "store") and service.store is not None:
                 direct_schedule = service.store.get_schedule_for_date(store_key, effective_target_date)
                 if direct_schedule and not direct_schedule.get("meta", {}).get("error"):
-                    logger.info(
-                        f"[DayMind] ensure_today_schedule: get_schedule_data reported missing but store has valid schedule, "
-                        f"skipping regeneration: store_key={store_key}, target_date={effective_target_date}"
+                    logger.debug(
+                        f"[DayMind] 存储中已有有效日程，跳过补生成: store_key={store_key}, date={effective_target_date}"
                     )
                     result.update({
                         "status": "existing",
@@ -337,9 +335,8 @@ class DependencyManager:
                     return result
 
             if debug:
-                logger.info(
-                    f"[DayMind][debug] ensure_today_schedule start: session={session_id}, requested_persona={persona_name}, "
-                    f"resolved_persona={resolved_persona_name}, store_key={store_key}, target_date={target_date or ''}"
+                logger.debug(
+                    f"[DayMind] ensure_today_schedule start: persona={resolved_persona_name or store_key}, date={target_date or ''}"
                 )
 
             ok = await service.enter_generation(store_key)
@@ -393,7 +390,7 @@ class DependencyManager:
                 "generated_now": True,
             })
             logger.info(
-                f"[DayMind] 已自动补生成目标日期日程: session_id={session_id}, persona={resolved_persona_name or store_key}, target_date={target_date or ''}"
+                f"[DayMind] 已自动补生成目标日期日程: persona={resolved_persona_name or store_key}, date={target_date or ''}"
             )
             return result
 
@@ -465,32 +462,28 @@ class DependencyManager:
         # has_livingmemory 内部会调用 check_dependencies 重新校验实例有效性
         if not self.has_livingmemory:
             if debug:
-                logger.info("[DayMind][debug] get_memory_engine: has_livingmemory=False")
+                logger.debug("[DayMind] get_memory_engine: has_livingmemory=False")
             return None
 
         memory_engine = self._extract_memory_engine_from_instance(self._livingmemory_instance)
         if memory_engine is not None:
             if debug:
-                logger.info(
-                    f"[DayMind][debug] get_memory_engine: cache_hit=True, "
-                    f"instance_cls={self._livingmemory_instance.__class__.__name__ if self._livingmemory_instance else 'None'}, "
-                    f"engine_cls={memory_engine.__class__.__name__}"
+                logger.debug(
+                    f"[DayMind] get_memory_engine: cache_hit=True, engine={memory_engine.__class__.__name__}"
                 )
             return memory_engine
 
         if debug:
-            logger.info(
-                f"[DayMind][debug] get_memory_engine: cache_hit=False, refresh_if_invalid={refresh_if_invalid}, "
-                f"instance_exists={self._livingmemory_instance is not None}"
+            logger.debug(
+                f"[DayMind] get_memory_engine: cache_hit=False, refresh_if_invalid={refresh_if_invalid}"
             )
 
         if refresh_if_invalid:
             deps = self.check_dependencies()
             memory_engine = self._extract_memory_engine_from_instance(self._livingmemory_instance)
             if debug:
-                logger.info(
-                    f"[DayMind][debug] get_memory_engine refresh result: has_livingmemory={deps.get('livingmemory')}, "
-                    f"instance_exists={self._livingmemory_instance is not None}, engine_ok={memory_engine is not None}"
+                logger.debug(
+                    f"[DayMind] get_memory_engine refresh: has_livingmemory={deps.get('livingmemory')}, engine_ok={memory_engine is not None}"
                 )
             return memory_engine
 
@@ -594,9 +587,7 @@ class DependencyManager:
         memory_engine = self.get_memory_engine(refresh_if_invalid=True, debug=True)
         if not memory_engine:
             logger.warning(
-                f"[DayMind] memory_engine 不可用，跳过存储: date={date_str}, session_id={session_id}, "
-                f"persona_id={persona_id}, has_livingmemory={self.has_livingmemory}, "
-                f"instance_exists={self._livingmemory_instance is not None}"
+                f"[DayMind] memory_engine 不可用跳过存储: date={date_str}, persona_id={persona_id}, has_livingmemory={self.has_livingmemory}"
             )
             return False
 
@@ -612,9 +603,8 @@ class DependencyManager:
             if metadata:
                 final_metadata.update(metadata)
 
-            logger.info(
-                f"[DayMind][debug] store_to_memory start: date={date_str}, session_id={session_id}, "
-                f"persona_id={resolved_persona_id}, metadata_keys={sorted(final_metadata.keys())}"
+            logger.debug(
+                f"[DayMind] store_to_memory: date={date_str}, session_id={session_id}, persona_id={resolved_persona_id}"
             )
 
             # 对可重试错误（5xx/429/超时/连接错误）做指数退避重试，优先采用响应体里的 retry_after
@@ -630,8 +620,7 @@ class DependencyManager:
                         metadata=final_metadata,
                     )
                     logger.info(
-                        f"[DayMind] 日记已存入记忆系统: {date_str}, "
-                        f"session_id={session_id}, persona_id={resolved_persona_id}"
+                        f"[DayMind] 日记已存入记忆系统: date={date_str}, persona_id={resolved_persona_id}"
                         + (f", attempt={attempt + 1}" if attempt > 0 else "")
                     )
                     return True
@@ -639,15 +628,14 @@ class DependencyManager:
                     if attempt < max_retries and self._is_retryable_memory_error(e):
                         delay = self._extract_retry_after(e) or base_delays[attempt]
                         logger.warning(
-                            f"[DayMind] 存入 livingmemory 失败（可重试），{delay}s 后重试: "
-                            f"attempt={attempt + 1}/{max_retries + 1}, error={e}"
+                            f"[DayMind] 存入记忆系统失败（可重试），{delay}s 后重试: attempt={attempt + 1}/{max_retries + 1}, error={e}"
                         )
                         await asyncio.sleep(delay)
                     else:
                         raise
 
         except Exception as e:
-            logger.error(f"[DayMind] 存入 livingmemory 失败: {e}", exc_info=True)
+            logger.error(f"[DayMind] 存入记忆系统失败: {e}", exc_info=True)
             # 失败后清空 livingmemory 实例缓存，下次调用 get_memory_engine
             # 会重新走 check_dependencies 拿最新实例。
             # 这是为了应对 livingmemory reload/terminate 后旧实例仍然存在
@@ -719,9 +707,8 @@ class DependencyManager:
         memory_engine = self.get_memory_engine(refresh_if_invalid=True, debug=True)
         result = {"matched": 0, "updated": 0, "ids": []}
         if not memory_engine:
-            logger.info(
-                f"[DayMind][debug] mark_daymind_diary_memories_deleted skipped: date={date_str}, "
-                f"session_id={session_id}, engine_ok={memory_engine is not None}"
+            logger.debug(
+                f"[DayMind] mark_diary_memories_deleted 跳过: date={date_str}, session_id={session_id}"
             )
             return result
 
@@ -788,14 +775,12 @@ class DependencyManager:
                     result["updated"] += 1
                     result["ids"].append(memory_id)
 
-            logger.info(
-                f"[DayMind][debug] mark_daymind_diary_memories_deleted result: date={date_str}, "
-                f"session_id={session_id}, matched={result['matched']}, updated={result['updated']}"
+            logger.debug(
+                f"[DayMind] mark_diary_memories_deleted 结果: date={date_str}, matched={result['matched']}, updated={result['updated']}"
             )
             if result["updated"]:
                 logger.info(
-                    f"[DayMind] 已将旧日记记忆标记删除: date={date_str}, "
-                    f"session_id={session_id}, updated={result['updated']}"
+                    f"[DayMind] 已标记旧日记记忆删除: date={date_str}, updated={result['updated']}"
                 )
         except Exception as e:
             logger.error(f"[DayMind] 标记旧日记记忆删除失败: {e}", exc_info=True)

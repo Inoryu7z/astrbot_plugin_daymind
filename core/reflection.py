@@ -631,7 +631,7 @@ class ReflectionGenerator(PersonaConfigMixin):
             if not provider_id:
                 provider_id = await self._get_default_provider_id()
             if not provider_id:
-                logger.error("[ReflectionGenerator] 思考失败[provider_missing]: 没有配置思考模型提供商")
+                logger.error("[ReflectionGenerator] 无可用思考模型提供商")
                 return None, None
             kwargs = {
                 "chat_provider_id": provider_id,
@@ -641,7 +641,7 @@ class ReflectionGenerator(PersonaConfigMixin):
                 kwargs["tools"] = tools
             response = await self.context.llm_generate(**kwargs)
             if response is None:
-                logger.error(f"[ReflectionGenerator] 思考失败[empty_response]: provider={provider_id} 返回空响应对象")
+                logger.error(f"[ReflectionGenerator] provider={provider_id} 返回空响应")
                 return None, None
             completion_text = getattr(response, "completion_text", None)
             if completion_text and completion_text.strip():
@@ -651,17 +651,17 @@ class ReflectionGenerator(PersonaConfigMixin):
             tools_call_names = getattr(response, "tools_call_name", None) or []
             if tools is not None and tools_call_names:
                 logger.info(
-                    f"[ReflectionGenerator] 思考命中 Tool 调用（completion_text 为空属预期）: provider={provider_id}, tools={tools_call_names}"
+                    f"[ReflectionGenerator] 命中 Tool 调用（completion_text 为空属预期）: provider={provider_id}, tools={tools_call_names}"
                 )
                 return None, response
-            logger.error(f"[ReflectionGenerator] 思考失败[empty_completion]: provider={provider_id} completion_text为空")
+            logger.error(f"[ReflectionGenerator] provider={provider_id} completion_text 为空")
             return None, response
         except Exception as e:
             err_text = str(e)
             if "no choices" in err_text.lower():
-                logger.error(f"[ReflectionGenerator] 思考失败[provider_no_choices]: provider={provider_id}, error={e}")
+                logger.error(f"[ReflectionGenerator] provider={provider_id} 无 choices: {e}")
             else:
-                logger.error(f"[ReflectionGenerator] 思考失败[provider_exception]: provider={provider_id}, error={e}")
+                logger.error(f"[ReflectionGenerator] provider={provider_id} 调用异常: {e}")
             return None, None
 
     async def _get_default_provider_id(self) -> Optional[str]:

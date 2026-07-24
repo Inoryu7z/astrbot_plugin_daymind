@@ -616,8 +616,8 @@ class MoodManager(PersonaConfigMixin):
 
         if self.is_debug_mode():
             previous_label = str((previous_mood or mood.get("previous_mood") or {}).get("label") or "").strip() or "无"
-            logger.info(
-                f"[MoodManager][debug] mood_injection current={label}, previous={previous_label}, sub_labels={sub_labels}, strength={strength}, transition={'yes' if transition_text else 'no'}"
+            logger.debug(
+                f"[MoodManager] mood_injection: current={label}, previous={previous_label}, strength={strength}, transition={'yes' if transition_text else 'no'}"
             )
 
         return style_text.strip()

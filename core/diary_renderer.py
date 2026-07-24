@@ -99,7 +99,7 @@ class DiaryRenderer:
 
         for path in candidates:
             if path.exists() and path.stat().st_size > 100_000:
-                logger.info(f"[DiaryRenderer] 使用系统字体: {path}")
+                logger.debug(f"[DiaryRenderer] 使用系统字体: {path}")
                 return path
 
         return None
@@ -121,10 +121,10 @@ class DiaryRenderer:
                     return target
                 else:
                     tmp.unlink(missing_ok=True)
-                    logger.warning(f"[DiaryRenderer] 下载的字体文件过小，尝试下一个源: {url}")
+                    logger.warning(f"[DiaryRenderer] 字体文件过小，尝试下一个源: {url}")
             except Exception as e:
                 tmp.unlink(missing_ok=True)
-                logger.warning(f"[DiaryRenderer] 从 {url} 下载字体失败: {e}")
+                logger.warning(f"[DiaryRenderer] 下载字体失败: {url}, error={e}")
 
         logger.error("[DiaryRenderer] 所有字体下载源均失败")
         return None

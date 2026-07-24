@@ -78,8 +78,7 @@ class DiaryGenerator(PersonaConfigMixin):
             schedule_data = schedule_result.get("data") or {}
             if schedule_result.get("status") == "failed":
                 logger.warning(
-                    f"[DiaryGenerator] 目标日期日程不可用，跳过日记生成: session={session_id}, "
-                    f"persona={resolved_name}, target_date={date_str}, reason={schedule_result.get('message', '')}"
+                    f"[DiaryGenerator] 日程不可用跳过日记: persona={resolved_name}, date={date_str}, reason={schedule_result.get('message', '')}"
                 )
                 return None
 
@@ -436,7 +435,7 @@ class DiaryGenerator(PersonaConfigMixin):
         if date_str and not self._first_line_has_date(result, date_str):
             date_header = self._format_date_header(date_str)
             result = f"{date_header}\n\n{result}"
-            logger.info(f"[DiaryGenerator] 日记首行缺少日期，已自动补全: {date_header}")
+            logger.debug(f"[DiaryGenerator] 日记首行补全日期: {date_header}")
 
         return result
 
@@ -478,7 +477,7 @@ class DiaryGenerator(PersonaConfigMixin):
                 provider_id = await self._get_default_provider_id()
 
             if not provider_id:
-                logger.error("[DiaryGenerator] 日记失败[provider_missing]: 没有配置日记模型提供商")
+                logger.error("[DiaryGenerator] 无可用日记模型提供商")
                 return None
 
             response = await self.context.llm_generate(
@@ -487,22 +486,22 @@ class DiaryGenerator(PersonaConfigMixin):
             )
 
             if response is None:
-                logger.error(f"[DiaryGenerator] 日记失败[empty_response]: provider={provider_id} 返回空响应对象")
+                logger.error(f"[DiaryGenerator] provider={provider_id} 返回空响应")
                 return None
 
             completion_text = getattr(response, "completion_text", None)
             if completion_text and completion_text.strip():
                 return completion_text.strip()
 
-            logger.error(f"[DiaryGenerator] 日记失败[empty_completion]: provider={provider_id} completion_text为空")
+            logger.error(f"[DiaryGenerator] provider={provider_id} completion_text 为空")
             return None
 
         except Exception as e:
             err_text = str(e)
             if "no choices" in err_text.lower():
-                logger.error(f"[DiaryGenerator] 日记失败[provider_no_choices]: provider={provider_id}, error={e}")
+                logger.error(f"[DiaryGenerator] provider={provider_id} 无 choices: {e}")
             else:
-                logger.error(f"[DiaryGenerator] 日记失败[provider_exception]: provider={provider_id}, error={e}")
+                logger.error(f"[DiaryGenerator] provider={provider_id} 调用异常: {e}")
             return None
 
     async def _get_default_provider_id(self) -> Optional[str]:
@@ -550,16 +549,16 @@ class DiaryGenerator(PersonaConfigMixin):
                     if completion_text and completion_text.strip():
                         return completion_text.strip()
                     if not is_fallback:
-                        logger.warning(f"[DiaryGenerator] 日记生成 primary provider 返回空，尝试 fallback: provider={attempt_provider_id}")
+                        logger.warning(f"[DiaryGenerator] primary 返回空，尝试 fallback: provider={attempt_provider_id}")
                 elif not is_fallback:
-                    logger.warning(f"[DiaryGenerator] 日记生成 primary provider 返回 None，尝试 fallback: provider={attempt_provider_id}")
+                    logger.warning(f"[DiaryGenerator] primary 返回 None，尝试 fallback: provider={attempt_provider_id}")
             except Exception as e:
                 last_error = e
                 if not is_fallback:
-                    logger.warning(f"[DiaryGenerator] 日记生成 primary provider 异常，尝试 fallback: provider={attempt_provider_id}, error={e}")
+                    logger.warning(f"[DiaryGenerator] primary 异常，尝试 fallback: provider={attempt_provider_id}, error={e}")
                 else:
-                    logger.error(f"[DiaryGenerator] 日记生成 fallback provider 也失败: provider={attempt_provider_id}, error={e}")
+                    logger.error(f"[DiaryGenerator] fallback 也失败: provider={attempt_provider_id}, error={e}")
 
         if not primary_provider_id and not fallback_provider_id:
-            logger.error("[DiaryGenerator] 日记失败[provider_missing]: 没有配置日记模型提供商")
+            logger.error("[DiaryGenerator] 无可用日记模型提供商")
         return None
