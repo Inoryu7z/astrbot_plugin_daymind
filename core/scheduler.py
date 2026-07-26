@@ -1070,6 +1070,22 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
             return None
         state = self._ensure_persona_state(canonical_persona)
 
+        # 最高优先级：人格级推送目标 diary_push_targets[0]
+        # 用户明确配置的"归属 umo"，不依赖 message_cache 或 last_selected_session_id，
+        # 解决"希望日记写入 a 的 umo 却写到了 b"的问题
+        # （b 最近活跃或被 last_selected_session_id 锁定导致日记归属错乱）
+        push_targets = self._persona_value(
+            canonical_persona, "diary_push_targets",
+            self.config.get("diary_push_targets", []),
+        )
+        if push_targets:
+            first_target = str(push_targets[0] or "").strip()
+            if first_target:
+                state["last_selected_session_id"] = first_target
+                state["last_selected_session_source"] = "diary_push_targets"
+                self._touch_session_persona(first_target, canonical_persona)
+                return first_target
+
         last_selected_session_id = str(state.get("last_selected_session_id") or "").strip()
         if last_selected_session_id and self._canonical_persona_name(self.session_persona_map.get(last_selected_session_id)) == canonical_persona:
             state["last_selected_session_id"] = last_selected_session_id

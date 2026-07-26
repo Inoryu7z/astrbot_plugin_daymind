@@ -1,11 +1,19 @@
+### v1.8.5
+
+**🐛 修复日记写入 livingmemory 的 umo 归属错乱**
+
+* 日记写入 livingmemory 时，归属 umo 优先取 `diary_push_targets[0]`，避免日记写入最近活跃用户的 umo
+* 未配置 `diary_push_targets` 时维持原逻辑
+
+---
+
 ### v1.8.4
 
 **🐛 修复主动对话从未生效 + 下调日记重要性指数**
 
-* 修复 v1.8.0 引入的"思考后主动对话"功能从未触发的严重 bug：`_do_reflection` 中主动对话 Tool 调用检测被嵌套在 `if result:` 块内部，而 LLM 调用 Tool 时 `completion_text` 常为空导致 `result=None`，整个 Tool 检测被跳过，主动对话永远无法触发。现改为独立检测块，无论是否生成文本都执行检测，并新增"Tool 被调用但未生成文本"的成功返回路径，避免被误判为失败触发冷却。
-* 修复 `_run_reflection_generation_with_retries` 在 LLM 调用 Tool 后仍盲目重试的问题：检测到 Tool 调用后立即返回不再重试，避免浪费 tokens 与重复触发冷却。
-* 优化 `_call_llm` 日志：当传入 tools 且 LLM 选择调用 Tool 时，`completion_text` 为空属预期行为，日志从 ERROR 降级为 INFO，避免"思考失败[empty_completion]"刷屏并误导排查方向。
-* 下调日记存入 livingmemory 的重要性指数：`importance` 从硬编码 0.7 降为 0.4（低于 livingmemory 默认值 0.5），原因：日记来源是完全随机生成的虚拟内容，而与用户的对话是绝对真实的，过高的日记重要性会导致召回时虚拟日记污染真实对话记忆。
+* 修复思考后主动对话功能从未触发的问题（Tool 检测被嵌套在空结果分支内）
+* 主动对话检测到 Tool 调用后立即返回，不再重试
+* 日记存入 livingmemory 的重要性从 0.7 降为 0.4，避免虚拟日记污染真实对话记忆
 
 ---
 
@@ -13,10 +21,9 @@
 
 **🐛 修复日记存不进 livingmemory 的两类缓存失效问题**
 
-* 修复 Server A 静默跳过问题：`has_livingmemory` 之前永久缓存首次探测结果，若 daymind 启动时 livingmemory 还在后台初始化（`memory_engine` 尚为 None），会被永久缓存为 False，之后即使 livingmemory 初始化完成也再也不会重新检查，日记直接 `memory_status="skipped"` 跳过存储且无任何 warning。现改为每次访问都实时 `check_dependencies()` 重新探测。
-* 修复 Server B retry 18 次仍失败问题：`get_memory_engine` 之前仅靠 `memory_engine is not None` 判定实例可用，但 livingmemory `terminate()`/reload 后旧实例引用仍在内存中、底层 `db_connection` 和 `faiss_db.engine` 已 close，导致 daymind 一直拿到已关闭的 engine 反复重试。`_is_valid_livingmemory_instance` 现增加 `initializer.is_initialized` + `db_connection` + `faiss_db.engine` 三层有效性校验。
-* `store_to_memory` / `mark_daymind_diary_memories_deleted` 失败后主动清空 `_livingmemory_instance` 和 `_has_livingmemory` 缓存，确保 60s 后的补存重试能拿到最新实例而非继续使用已失效的 engine。
-* `check_dependencies` 新增 `_last_livingmemory_available` 状态跟踪，仅在状态变化时打 info/warning 日志，避免 `has_livingmemory` 改为实时检查后日志刷屏。
+* `has_livingmemory` 改为每次访问都重新探测，避免启动时 livingmemory 未初始化就被永久缓存为不可用
+* `_is_valid_livingmemory_instance` 增加多层有效性校验，识别 livingmemory reload/terminate 后已关闭的实例
+* 存储失败后主动清空实例缓存，确保下次重试拿到最新实例
 
 ---
 
@@ -24,13 +31,9 @@
 
 **🛡️ 日记存入记忆系统增加重试与补存机制**
 
-* 修复 `store_to_memory` 在 embedding API 偶发 502/超时/连接错误时直接判失败的问题：新增 3 次指数退避重试（5s/15s/45s），优先采用响应体里的 `retry_after` 字段
-* 新增可重试错误识别（`openai.InternalServerError`/`APITimeoutError`/`APIConnectionError`/`RateLimitError` 及 5xx/429 字符串兜底）
-* 新增 `memory_failed` 状态：本地已保存但记忆系统写入失败时，不再标记整篇日记为 failed，而是标记 `diary_generated_today=True` 并记录待补存信息，避免冷却结束后重新生成日记浪费 LLM tokens
-* 新增 `_retry_pending_memory_store` 补存方法：从本地读取日记内容，用同一 version 重新写入记忆系统，每 60s 自动重试直到成功
-* 主循环每轮检查待补存状态，非静默时段触发补存；`memory_failed` 不进入 600s 冷却
-* 跨天 reset 不清除待补存信息，确保昨天的失败日记也能补存
-* 手动触发日记遇 `memory_failed` 时仍展示日记内容并提示将自动补存
+* `store_to_memory` 新增 3 次指数退避重试（5s/15s/45s），应对 embedding API 偶发 502/超时
+* 新增 `memory_failed` 状态：本地已保存但记忆系统写入失败时记录待补存信息，不进冷却
+* 新增补存机制：每 60s 自动重试直到成功，跨天 reset 不清除待补存信息
 
 ---
 
@@ -38,12 +41,9 @@
 
 **🐛 适配 LivingMemory v2.0+ 新版 API**
 
-* 修复 `mark_daymind_diary_memories_deleted` 调用 `search_memory`（单数）方法在 livingmemory v2.0+ 上抛 `AttributeError` 的问题，新版 API 已重命名为 `search_memories`（复数）
-* 修复搜索参数 `top_k=50` 在新版 API 上不兼容的问题，新版使用 `k` 参数
-* 修复搜索结果 `HybridResult` dataclass 对象被当作字典访问（`memory.get("metadata")` / `memory["id"]`）导致 `AttributeError` 的问题，改用属性访问（`memory.metadata` / `memory.doc_id`）
-* 新增 `_extract_memory_metadata` / `_extract_memory_id` 兼容辅助方法，同时支持新版 dataclass 与旧版 dict 两种返回形式
-* 通过 `hasattr` 探测同时兼容新版 `search_memories` 与旧版 `search_memory`，确保向后兼容
-* 影响范围：旧日记的"标记删除"流程（日记重新生成时清理旧记忆），不影响新日记的存储（`add_memory` API 一直兼容）
+* 适配 `search_memory` → `search_memories`、`top_k` → `k` 的 API 重命名
+* 适配新版 `HybridResult` dataclass 返回类型，兼容旧版 dict
+* 影响范围：旧日记的"标记删除"流程，不影响新日记存储
 
 ---
 
@@ -52,10 +52,9 @@
 **🗣️ 思考后主动对话**
 
 * 新增思考后主动对话功能：思考时 LLM 可调用 `daymind_want_to_chat` 工具，触发向指定目标发送主动消息
-* 三档控制模式：关闭（默认）/ 低频（仅强烈倾向时调用）/ 普通（LLM 自行判断）
-* 主动对话使用对话模型生成自然消息，手动触发 on_llm_request 和 decorating 钩子，确保完整链路
-* 发送的消息自动写入对话历史，保证上下文连贯
-* 按推送目标的冷却机制，防止频繁打扰（默认 90 分钟，高级设置可调）
+* 三档控制模式：关闭（默认）/ 低频 / 普通
+* 主动对话使用对话模型生成自然消息，发送的消息自动写入对话历史
+* 按推送目标的冷却机制，防止频繁打扰（默认 90 分钟）
 * 新增人格级配置项：`proactive_chat_mode`、`proactive_chat_push_target`、`proactive_chat_cooldown_minutes`
 
 ---
@@ -64,12 +63,10 @@
 
 **🧠 思考模块适配 DayFlow 细分骨架**
 
-* 思考提示词全面适配 DayFlow 细分骨架（sub_events），从"复述日程"转向"写出活动中的具体经历"
-* 规则1 重构：日程对齐 → 活动锚定（细分定锚，骨架定向），思考不重复活动名称
-* 规则3 重构：信息选择优先级调整，第一优先从"核心活动/场景"改为"当前细分活动中的具体经历"
+* 思考提示词适配 DayFlow 细分骨架（sub_events），从"复述日程"转向"写出活动中的具体经历"
 * 三档模式定义更新：简洁聚焦内心落点、适量写具体经历、丰富必须三维度（经历+环境+意识偏移）
-* 新增增强版时段上下文：前一时段（含detail）+ 当前时段骨架（含detail）+ 当前时段细分（含←此刻标记）+ 后一时段（含detail）
-* 回退兼容：sub_events 为空时自动回退到原来的大时段格式，零影响
+* 新增增强版时段上下文（前/当前/后时段含 detail）
+* sub_events 为空时自动回退到原大时段格式
 
 ---
 
@@ -77,10 +74,8 @@
 
 **🐛 修复 ensure_today_schedule 可能覆盖已有日程的严重问题**
 
-* 修复 `ensure_today_schedule` 在 `get_schedule_data` 因瞬态错误返回空字典时，误判日程缺失并触发重新生成的问题
-* 新增直接通过 Dayflow store 的 `get_schedule_for_date` 二次验证机制
-* 如果 store 中存在有效日程（无 error 标记），跳过重新生成，返回已有日程
-* 防止 DayMind 的反思/日记功能意外覆盖用户已生成的日程
+* 修复 `get_schedule_data` 因瞬态错误返回空字典时误判日程缺失并重新生成的问题
+* 新增通过 Dayflow store 的二次验证，store 中存在有效日程时跳过重新生成
 
 ---
 
@@ -88,9 +83,7 @@
 
 **🐛 修复 ensure_today_schedule 日程未持久化的严重 bug**
 
-* 修复 dependency.py 中 ensure_today_schedule 调用 service.save_generated(store_key, generated) 缺少 await
-* save_generated 是 async 方法，缺少 await 导致协程被创建但从未执行，自动补生成的日程从未持久化到 DayFlow 存储
-* 直接后果：DayMind 思考时读到的日程可能是旧的/不存在的
+* 修复 `ensure_today_schedule` 调用 `service.save_generated` 缺少 `await` 导致自动补生成的日程未持久化的问题
 
 ---
 
@@ -99,13 +92,10 @@
 **🏗️ 架构重构 + 日记渲染优化 + 梦境历史清理**
 
 * 架构重构：scheduler.py 拆分为 mixin 模块（dream_ops.py + diary_ops.py），主文件减少约 600 行
-* 优化日记图片背景渲染：改用小纹理+resize 方案，性能提升约 20 倍
-* 新增图片最大高度限制（4096px），过长内容自动截断并添加省略号
-* 新增字体下载镜像回退（jsDelivr CDN），解决中国大陆无法访问 GitHub 的问题
+* 优化日记图片背景渲染，性能提升约 20 倍；新增图片最大高度限制（4096px）
+* 新增字体下载镜像回退（jsDelivr CDN）
 * 新增梦境历史清理机制，复用 diary_retention_days 配置
-* 修复日记图片 footer 显示当前时间而非日记时间的问题，改为仅显示装饰符号
-* 修复图片发送方式：改用 `Image.fromBase64()` 替代手动拼接 `base64://` 协议
-* 代码质量：删除未用 import、补充 diary_renderer 声明、清理重复 import
+* 修复日记图片 footer 显示当前时间而非日记时间的问题
 
 ---
 
