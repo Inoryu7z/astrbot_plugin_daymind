@@ -100,6 +100,7 @@
 |------|------|
 | `astrbot_plugin_dayflow_life_scheduler` | 提供天气、日程、穿着等现实轨迹，让思考与日记更贴近生活；可读取 DayMind 心情状态调整日程生成 |
 | `astrbot_plugin_livingmemory` | 让日记进入长期记忆系统，支持后续召回与追踪 |
+| `astrbot_plugin_lm_patch` | 记忆演化补丁，为 DayMind 写入 LivingMemory 的日记提供召回过滤与压缩分池，避免日记挤占真实对话记忆 |
 
 ### 🗂️ LivingMemory 联动
 
