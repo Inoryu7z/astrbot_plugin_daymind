@@ -338,6 +338,15 @@
               "show_advanced": true
             }
           },
+          "reflection_failure_retry_limit": {
+            "type": "int",
+            "description": "思考失败重试上限",
+            "default": 2,
+            "hint": "思考连续失败达到该次数后进入冷却，冷却时长为思考间隔。填 0 表示不限制，始终按失败重试间隔重试。默认 2 次。",
+            "condition": {
+              "show_advanced": true
+            }
+          },
           "reflection_generation_retry_count": {
             "type": "int",
             "description": "思考生成重试次数",

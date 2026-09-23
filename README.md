@@ -156,6 +156,7 @@ DayFlow 可以读取 DayMind 的心情状态，用于调整日程生成的风格
 - `reflection_auto_ensure_today_schedule`：思考前是否自动确保今日日程存在
 - `reflection_generation_retry_count`：思考生成失败时重试次数
 - `reflection_generation_retry_delay_seconds`：思考生成重试间隔
+- `reflection_failure_retry_limit`：思考连续失败达到该次数后进入冷却（默认 2 次）
 
 ### 日记相关
 - `diary_time`：自动日记生成时间

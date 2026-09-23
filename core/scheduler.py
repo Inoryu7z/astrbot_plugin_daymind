@@ -681,7 +681,7 @@ class AwarenessScheduler(PersonaConfigMixin, DreamOperations, DiaryOperations):
             return default
 
     def _get_reflection_failure_retry_limit(self, persona_name: str | None) -> int:
-        return self._safe_non_negative_int(self._persona_value(persona_name, "reflection_failure_retry_limit", 10), default=10)
+        return self._safe_non_negative_int(self._persona_value(persona_name, "reflection_failure_retry_limit", 2), default=2)
 
     def _get_reflection_failure_retry_delay_seconds(self, persona_name: str | None) -> int:
         interval_minutes = float(self._persona_value(persona_name, "thinking_interval_minutes", 30) or 30)
