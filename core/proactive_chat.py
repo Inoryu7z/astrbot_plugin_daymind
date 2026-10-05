@@ -49,7 +49,40 @@ TOOL_DESCRIPTIONS = {
     ),
 }
 
-PROACTIVE_SYSTEM_HINT = "你因为刚才的思考现在想和对方分享一下，请自然发起对话。不要提及「思考」「刚才在想」等元信息，直接以你自己的方式自然开口即可。"
+PROACTIVE_SYSTEM_HINT = (
+    "[DayMind 主动对话触发] 是系统注入的标记，不是对方说的话，忽略它即可。"
+    "你刚结束思考，现在想主动找对方分享或聊天，请直接以角色身份自然开口，"
+    "不要提及思考、标记等任何元信息。"
+)
+
+TRIGGER_MARKER = "[DayMind 主动对话触发]"
+
+_WEEKDAY_NAMES = (
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+)
+
+
+def _build_current_time_reminder() -> str:
+    """构造与框架 datetime_system_prompt 同格式的当前时间提醒。
+
+    主动对话经 context.llm_generate 直连 provider，绕过了标准 pipeline，
+    框架不会注入 <system_reminder>Current datetime: ...</system_reminder>；
+    而对话历史中上一轮用户消息还嵌着当时的旧时间戳，模型会把旧时间当成现在。
+    这里补一条最新的时间提醒，随触发标记置于上下文最后，覆盖历史中的旧值。
+    """
+    now = datetime.datetime.now().astimezone()
+    current_time = now.strftime("%Y-%m-%d %H:%M (%Z)")
+    weekday = _WEEKDAY_NAMES[now.weekday()]
+    return (
+        f"<system_reminder>Current datetime: {current_time}, "
+        f"Weekday: {weekday}</system_reminder>"
+    )
 
 
 class ProactiveChatManager(PersonaConfigMixin):
@@ -159,10 +192,14 @@ class ProactiveChatManager(PersonaConfigMixin):
 
         conversation_context = await self._prepare_conversation_context(push_target)
 
+        # 触发标记（与 _save_to_conversation_history 落库的用户消息标记保持一致）
+        # + 当前时间提醒，见 _build_current_time_reminder 的说明。
+        trigger_prompt = f"{TRIGGER_MARKER}\n{_build_current_time_reminder()}"
+
         try:
             response = await self.context.llm_generate(
                 chat_provider_id=provider_id,
-                prompt="请自然地发起对话。",
+                prompt=trigger_prompt,
                 contexts=conversation_context.get("history", []),
                 system_prompt=system_prompt,
             )
@@ -477,7 +514,7 @@ class ProactiveChatManager(PersonaConfigMixin):
             if not conv_mgr:
                 return
 
-            user_msg = UserMessageSegment(content=[TextPart(text="[DayMind 主动对话触发]")])
+            user_msg = UserMessageSegment(content=[TextPart(text=TRIGGER_MARKER)])
             assistant_msg = AssistantMessageSegment(content=[TextPart(text=assistant_text)])
 
             await conv_mgr.add_message_pair(
