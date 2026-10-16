@@ -22,7 +22,6 @@ class ReflectionGenerator(PersonaConfigMixin):
         "明晚",
         "后天",
         "下周",
-        "之后",
         "过几天",
         "未来",
         "改天",
@@ -323,56 +322,41 @@ class ReflectionGenerator(PersonaConfigMixin):
         weekday = weekday_names[datetime.datetime.now().weekday()]
 
         mode = self._persona_value(persona_name, "thinking_mode", "适量")
+        if mode not in ("简洁", "适量", "丰富"):
+            mode = "丰富"
         if mode == "简洁":
-            mode_desc = "简洁"
-            length_hint = "- 控制在30字以内，只写此刻最核心的一个念头或感受，不重复当前活动名称"
-            mode_definition_enhanced = "- 简洁：一瞬间的意识截面（30字内）。只写此刻最核心的一个念头或感受，不重复当前活动名称（当前活动已在上下文中给出），只写活动中的内心落点。"
-            mode_definition_basic = "- 简洁：一瞬间的意识截面（30字内）。只写此刻最核心的一个念头或感受，不重复当前活动名称（当前活动已在上下文中给出），只写活动中的内心落点。"
+            length_hint = "控制在30字以内"
+            mode_definition_enhanced = "- 简洁：一瞬间的意识截面（30字内）。只写此刻最核心的一个念头或感受。"
+            mode_definition_basic = "- 简洁：一瞬间的意识截面（30字内）。只写此刻最核心的一个念头或感受。"
         elif mode == "适量":
-            mode_desc = "适量"
-            length_hint_enhanced = "- 控制在80字以内，围绕当前细分活动，写出此刻在这个活动里的具体经历，不重复活动名称"
-            length_hint_basic = "- 控制在80字以内，围绕当前活动，写出此刻在这个活动里的具体经历，不重复活动名称"
-            mode_definition_enhanced = "- 适量：一小段完整的当下体验（80字内）。围绕当前细分活动，写出此刻在这个活动里的具体经历，而非复述活动本身；不重复活动名称，不写成日程摘要。"
-            mode_definition_basic = "- 适量：一小段完整的当下体验（80字内）。围绕当前活动，写出此刻在这个活动里的具体经历，而非复述活动本身；不重复活动名称，不写成日程摘要。"
+            length_hint = "控制在80字以内"
+            mode_definition_enhanced = "- 适量：一小段完整的当下体验（80字内）。围绕当前细分活动，写出此刻在这个活动里的具体经历。"
+            mode_definition_basic = "- 适量：一小段完整的当下体验（80字内）。围绕当前活动，写出此刻在这个活动里的具体经历。"
         else:
-            mode_desc = "丰富"
-            length_hint_enhanced = "- 控制在120-150字，必须同时具备活动中的具体经历、环境感知、意识的自然偏移三个维度"
-            length_hint_basic = "- 控制在120-150字，必须同时具备活动中的具体经历、环境感知、意识的自然偏移三个维度"
-            mode_definition_enhanced = "- 丰富：更有生活颗粒度的现场切片（120-150字）。在当前细分活动的基础上，必须同时具备以下三个维度，缺一不可：\n  1. 活动中的具体经历（非活动本身的复述）\n  2. 环境感知\n  3. 意识的自然偏移——从当前活动中自然生发，而非凭空插入\n不重复活动名称，不写成日程摘要。"
-            mode_definition_basic = "- 丰富：更有生活颗粒度的现场切片（120-150字）。在当前活动的基础上，必须同时具备以下三个维度，缺一不可：\n  1. 活动中的具体经历（非活动本身的复述）\n  2. 环境感知\n  3. 意识的自然偏移——从当前活动中自然生发，而非凭空插入\n不重复活动名称，不写成日程摘要。"
+            length_hint = "控制在120-150字"
+            mode_definition_enhanced = "- 丰富：更有生活颗粒度的现场切片（120-150字）。围绕当前细分活动，三个维度须自然融合：活动中的具体经历、环境感知、从当前经历自然生发的意识偏移。"
+            mode_definition_basic = "- 丰富：更有生活颗粒度的现场切片（120-150字）。围绕当前活动，三个维度须自然融合：活动中的具体经历、环境感知、从当前经历自然生发的意识偏移。"
 
         recent_messages_str = "\n".join(recent_messages) if recent_messages else "（暂无最近对话）"
 
         outfit = schedule_data.get("outfit", "")
         schedule = schedule_data.get("schedule", "")
-        state_info = ""
-        if outfit:
-            state_info += f"穿着：{outfit}\n"
-        if schedule:
-            state_info += f"日程：{schedule}"
-        if not state_info:
-            state_info = "（暂无日程信息）"
+        state_info = outfit if outfit else "（暂无穿着信息）"
 
-        sub_events = schedule_data.get("sub_events")
         timeline = schedule_data.get("timeline")
-        has_valid_sub_events = isinstance(sub_events, list) and len(sub_events) > 0
         has_valid_timeline = isinstance(timeline, list) and len(timeline) > 0
         used_enhanced_format = False
 
-        if has_valid_sub_events and has_valid_timeline:
+        if has_valid_timeline:
             current_slot_text = self._build_enhanced_slot_text(schedule_data, current_time)
             if current_slot_text:
                 used_enhanced_format = True
             else:
                 slot_result = self._extract_current_schedule_slot(schedule, current_time)
                 current_slot_text = slot_result["slots_text"] if slot_result["found"] else ""
-                if not current_slot_text and schedule:
-                    current_slot_text = schedule
         else:
             slot_result = self._extract_current_schedule_slot(schedule, current_time)
             current_slot_text = slot_result["slots_text"] if slot_result["found"] else ""
-            if not current_slot_text and schedule:
-                current_slot_text = schedule
 
         persona_name_text = persona_name or "（未绑定人格）"
         persona_desc_text = persona_desc or "（未获取到人格设定文本，请保持稳定自然、贴近既有人设气质的语气）"
@@ -383,39 +367,27 @@ class ReflectionGenerator(PersonaConfigMixin):
 当前细分活动是此刻的精确锚点，当前日程骨架是今日的方向感知。
 思考不重复活动名称，而是写出活动中的具体经历。
 - 思考必须从当前细分活动出发，不得矛盾
-- 思考可体现角色对今日轨迹的模糊感知，但这是自然感受而非日程复述
-- 即使最近对话内容很吸引人，也只能作为情绪的轻微点缀，不能让对话事件成为思考的主体"""
+- 思考可体现角色对今日轨迹的模糊感知，但这是自然感受而非日程复述"""
             rule_3 = """- 第一优先：当前细分活动中的具体经历
 - 第二优先：从当前经历中自然生发的偏移
 - 第三优先：此刻最突出的情绪
 - 第四优先：对今日轨迹的模糊感知
 - 第五优先：最近对话带来的轻微情绪残留（最多一句话带过，不可展开）
-- 第六优先：最近思考提供的连续性线索
-- 最低优先：穿搭、外貌、材质、配色、饰品等外观信息"""
+- 第六优先：最近思考提供的连续性线索"""
             mode_definition = mode_definition_enhanced
-            if mode == "适量":
-                length_hint = length_hint_enhanced
-            elif mode == "丰富":
-                length_hint = length_hint_enhanced
         else:
             rule_1 = """活动锚定——日程定锚
 当前时段日程是此刻的方向感知。
 思考不重复活动名称，而是写出活动中的具体经历。
 - 思考必须与当前时段日程对齐，不得矛盾
-- 思考可体现角色对今日轨迹的模糊感知，但这是自然感受而非日程复述
-- 即使最近对话内容很吸引人，也只能作为情绪的轻微点缀，不能让对话事件成为思考的主体"""
+- 思考可体现角色对今日轨迹的模糊感知，但这是自然感受而非日程复述"""
             rule_3 = """- 第一优先：当前活动中的具体经历
 - 第二优先：从当前经历中自然生发的偏移
 - 第三优先：此刻最突出的情绪
 - 第四优先：对今日轨迹的模糊感知
 - 第五优先：最近对话带来的轻微情绪残留（最多一句话带过，不可展开）
-- 第六优先：最近思考提供的连续性线索
-- 最低优先：穿搭、外貌、材质、配色、饰品等外观信息"""
+- 第六优先：最近思考提供的连续性线索"""
             mode_definition = mode_definition_basic
-            if mode == "适量":
-                length_hint = length_hint_basic
-            elif mode == "丰富":
-                length_hint = length_hint_basic
 
         format_kwargs = dict(
             time=current_time,
@@ -425,7 +397,6 @@ class ReflectionGenerator(PersonaConfigMixin):
             state_info=state_info.strip(),
             current_slot=current_slot_text,
             recent_messages=recent_messages_str,
-            mode_desc=mode_desc,
             mode_definition=mode_definition,
             length_hint=length_hint,
             recent_awareness=recent_awareness_text,
@@ -452,7 +423,7 @@ class ReflectionGenerator(PersonaConfigMixin):
         return prompt
 
     def _ensure_recent_awareness_placeholder(self, template: str) -> str:
-        if "{recent_awareness}" in template:
+        if "{recent_awareness}" in template or "## 最近思考" in template:
             return template
         marker = "## 核心规则"
         awareness_block = "\n\n## 最近思考\n{recent_awareness}\n"
@@ -474,7 +445,7 @@ class ReflectionGenerator(PersonaConfigMixin):
         return template + mode_block
 
     def _ensure_current_slot_placeholder(self, template: str) -> str:
-        if "{current_slot}" in template:
+        if "{current_slot}" in template or "## 当前时段日程" in template:
             return template
         marker = "## 当前互动背景"
         slot_block = "\n## 当前时段日程（必须以此为思考主线）\n{current_slot}\n\n"
@@ -495,9 +466,7 @@ class ReflectionGenerator(PersonaConfigMixin):
         return template + delta_hint
 
     def _get_default_template(self) -> str:
-        return """请你以第一人称，写出“此刻脑海里最鲜活的一小段意识切片”。
-
-这不是在复述日程，不是在总结今天，也不是在对别人说话；而是在记录“我现在这一刻，正处于怎样的状态、注意力落在哪里、心里掠过了什么”。
+        return """请你以第一人称，写出“此刻脑海里最鲜活的一小段意识切片”——记录我现在这一刻正处于怎样的状态、注意力落在哪里、心里掠过了什么。
 
 ## 当前身份
 - 当前人格名称：{persona_name}
@@ -506,18 +475,22 @@ class ReflectionGenerator(PersonaConfigMixin):
 
 ## 当前时空锚点
 - 时间：{time}（{weekday}）
-- 当前状态：
+- 当前穿着：
 {state_info}
 
 ## 当前时段日程（必须以此为思考主线）
 {current_slot}
 
-## 当前互动背景（仅作情绪参考，禁止作为思考主体）
-⚠️ 以下对话内容仅用于感知此刻是否有互动余温或情绪波动，绝对不可让对话内容主导思考正文。思考必须围绕【当前时段日程】展开。
+## 当前互动背景
+以下对话仅用于感知此刻的互动余温，不作为思考素材。
 {recent_messages}
 
 ## 最近思考
 {recent_awareness}
+
+【兜底规则】
+- 若【当前时段日程】为空，默认处于自然放松的普通日常状态，结合互动背景写此刻意识流。
+- 若互动背景也为空，就聚焦当前场景中的身体状态、注意力落点和自然情绪。
 
 ## 核心规则（绝对不可违背）
 
@@ -526,71 +499,59 @@ class ReflectionGenerator(PersonaConfigMixin):
 
 2. 【思考不是复述日程】
 日程只是现实骨架，不是正文模板。
-- 不要把日程原文换一种说法重写一遍。
-- 你要写的是"这一刻真正浮上来的意识内容"，而不是把今天安排重新描述。
+- 你要写的是“这一刻真正浮上来的意识内容”。
 - 在日程提供的场景框架内，写出真实的内心体验和意识流动。
 
 3. 【信息选择顺序必须明确】
 {rule_3}
 
 4. 【对话内容严格降权】
-最近对话只能提供极其轻微的情绪底色（如“被夸了一句，心里有点甜”），绝对不能：
+最近对话只能提供极其轻微的情绪底色，绝对不能：
 - 让对话中的具体事件、措辞、人物成为思考的核心内容
-- 反复围绕同一句对话内容展开（如反复想“他说了xxx”）
+- 反复回想对方说过的原话
 - 把思考写成对对话的回应或延续
-- 若对话内容与当前日程场景无关，直接忽略，不要强行关联
+- 若对话内容与当前日程场景无关，直接忽略。
 
 5. 【服装只可一笔带过】
 即使穿着信息里存在大量描写，正文也不得展开复述服装细节。
-- 除非服装与当前行动直接相关，否则不要主动提及。
+- 服装仅在确实与当前行动直接相关时，才可一笔带过。
 - 若确实必须提到，最多一句概括带过，禁止详细描述材质、款式、颜色、搭配、饰品。
 
 6. 【必须写出与上一条思考的差异】
-每次思考必须体现推进感，禁止重复上一条思考的情绪焦点、动作焦点或场景焦点。
-- 如果上一条聚焦于某种情绪，这一条就必须转向不同的情绪或动作。
-- 如果上一条在做某个动作，这一条就必须写出动作推进或场景变化。
-- 差异可以很小，但必须真实存在且可感知。
+- 禁止重复上一条思考的情绪焦点、动作焦点或场景焦点。
+- 以下四类至少变化其一：动作推进、注意力转移、情绪浓淡变化、环境或位置变化。
 
-7. 【最近思考只用于保持连续性，禁止复读】
-{recent_awareness} 只用于帮助你知道“今天已经想过什么”，不是让你把它们换说法重写。
-- 不允许只换词不换内容。
+7. 【最近思考只用于保持连续性】
+上方【最近思考】只用于帮助你知道“今天已经想过什么”。
+- 禁止只换措辞而不推进内容。
 
 8. 【时间边界只限今天与此刻】
-自动思考只允许落在“当前时刻”与“今天范围内”的体验。
-- 不主动展开明天、后天、未来几天的计划或安排。
-- 不得把正文重心写成未来打算。
+- 正文只落在“当前时刻”与“今天范围内”的体验。
+- 禁止在正文出现指向未来的时间词：明天、明早、明晚、后天、下周、过几天、改天 等。
 - 如果出现轻微挂念，也要立刻收回到此刻。
 
-9. 【不要强行凑完整结构】
-每次思考不必机械包含“动作 + 身体感受 + 内心想法”三项。
-- 有时只写一个最真实的念头就够了。
-- 有时只写动作里的情绪就够了。
-- 有时只写场景推进后留下的一点余韵就够了。
-- 重点是自然、准确、有当下感，不是形式完整。
+9. 【朴素自然】
+- 用朴素的文字写出真实的想法，禁止夸张化、文学化、强行升华。
+- 允许只写单一意识落点（一个念头、一丝动作情绪或一点余韵），不必凑满“动作 + 身体感受 + 内心想法”三项。
+（丰富模式须自然覆盖“活动经历 / 环境感知 / 意识偏移”三维度，不必机械平均用力，也不得写成 1./2./3. 并列清单；简洁与适量模式不受此限。）
 
 10. 【这是自我思考，不是对外说话】
-- 正文不要直接使用“你、你们”去称呼聊天对象。
-- 如果必须提到互动对象，只能用第三人称表达。
+- 正文以第一人称内省；若提及互动对象，一律用第三人称。
 - 禁止写成打招呼、安慰、回应、汇报。
 
+【模式定义】
+{mode_definition}
+
 ## 输出规范
-请严格匹配当前模式定义，同时遵守{length_hint}的长度要求。
+输出长度要求：{length_hint}
 
 输出格式（严格遵守）：
 第一行：【变】用一句话概括本次思考与上一条思考的差异点
 第二行起：第一人称正文
 
-示例：
-【变】从[上一状态]推进到[当前状态]
-[此刻正在做的事，以及心里最突出的感受或注意力落点]
-
-【模式定义】
-{mode_definition}
-
-【兜底规则】
-- 若【当前时段日程】为空，默认处于自然放松的普通日常状态，结合互动背景写此刻意识流。
-- 若互动背景也为空，就聚焦当前场景中的身体状态、注意力落点和自然情绪。
-- 若最近思考与当前时段高度重合，必须写出“这一刻和上一刻相比，哪里变了一点”。
+示例（仅作格式参考，措辞与结构均可变化）：
+【变】从发呆出神，变成注意到窗外的雨丝
+雨忽然密了，我盯着看了几秒，手指还停在书页边。
 """
 
     def _normalize_recent_role_prefix(self, text: str) -> str:
