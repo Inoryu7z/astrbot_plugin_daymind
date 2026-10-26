@@ -30,7 +30,7 @@ except ImportError:
 
 try:
     from astrbot.core.message.message_event_result import MessageChain
-    from astrbot.core.message.components import Plain
+    from astrbot.core.message.components import Plain, Record
     HAS_MESSAGE_CHAIN = True
 except ImportError:
     HAS_MESSAGE_CHAIN = False
@@ -405,10 +405,27 @@ class ProactiveChatManager(PersonaConfigMixin):
 
         try:
             chain = await self._trigger_decorating_hooks(session_id, [Plain(text=text)])
+            # 先移除空 Plain（对齐 respond/stage.py:250-257），防止发出空文本消息。
+            chain = [
+                c
+                for c in chain
+                if not (isinstance(c, Plain) and (not c.text or not c.text.strip()))
+            ]
             if not chain:
                 chain = [Plain(text=text)]
-            message_chain = MessageChain(chain)
-            return await self.context.send_message(session_id, message_chain)
+            # Record 必须单独发送（对齐 respond/stage.py:260-261 need_separately）。
+            # 与文本混在一条消息里经 context.send_message 发出时，QQ 端会丢弃文本段，
+            # 表现为主动对话"只有语音没有文本 / 语音后那段文本丢失"。
+            sep_comps = [c for c in chain if isinstance(c, Record)]
+            rest = [c for c in chain if not isinstance(c, Record)]
+            for comp in sep_comps:
+                ok = await self.context.send_message(session_id, MessageChain([comp]))
+                if not ok:
+                    logger.error(f"[ProactiveChat] 语音组件发送失败: {session_id}")
+                    return False
+            if rest:
+                return await self.context.send_message(session_id, MessageChain(rest))
+            return True
         except Exception as e:
             logger.error(f"[ProactiveChat] 消息发送失败: {e}")
             return False
